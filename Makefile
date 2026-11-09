@@ -29,8 +29,8 @@ format: ## Formats code with ruff
 format-check: ## Verifies formatting with ruff without modifying files
 	uv run ruff format --check .
 
-typecheck: ## Runs static type checking with pyright
-	uv run pyright
+typecheck: ## Runs static type checking with mypy
+	uv run mypy src tests
 
 audit: ## Audits dependencies for known security vulnerabilities
 	uv run pip-audit

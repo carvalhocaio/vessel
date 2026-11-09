@@ -1,83 +1,42 @@
-# python-template
+# vessel
 
-A minimalist, modern Python project template preconfigured with:
-- **Python 3.12+** and packaging via PEP 621 (`pyproject.toml` + `hatchling`)
-- **[uv](https://github.com/astral-sh/uv)** for fast package and virtual environment management
-- **[Ruff](https://github.com/astral-sh/ruff)** for linting and formatting (PEP 8 compliant, 88 columns)
-- **[Pyright](https://github.com/microsoft/pyright)** for static type checking
-- **[Pre-commit](https://pre-commit.com/)** git hooks for code hygiene and security
-- **[Pytest](https://pytest.org/)** test runner with smoke test
-- **[pip-audit](https://github.com/pypa/pip-audit)** for dependency vulnerability scanning
-- **Idiomatic Makefile** for development workflow automation
-- **GitHub Actions CI** matching local checks
+Data pipeline for the [@1caiocarvalho](https://x.com/1caiocarvalho) profile: Formula 1 statistics turned into charts and structured drafts for X.
 
----
+## Why vessel?
 
-## Quickstart
+*Vessel* is Twenty One Pilots' 2013 album. The word means a container, something that carries things from one place to another. That's this project's job: carrying data from the track (FastF1, Jolpica, official calendars) to the tweet draft without spilling a single number along the way.
 
-### 1. Using this template
+## Supported series
 
-Click **"Use this template"** on GitHub or clone the repository:
+| Series | When | Data |
+|---|---|---|
+| Grid em Números | Thursday before the GP | Circuit history and recent form |
+| Long Run | Friday night (Saturday on sprint weekends) | Race pace in free practice |
+| Volta Rápida | Sunday after the race | Stints, positions and 3 numbers |
 
-```bash
-git clone https://github.com/<username>/<repo-name>.git
-cd <repo-name>
+## Setup
+
+```fish
+uv sync
+cp env.example .env
+uv run vessel doctor
 ```
 
-### 2. Rename the project
+Fill in the secret iCal address of the F1 Google Calendar in `.env`.
 
-Run the renaming helper to configure your package name and update `pyproject.toml` and tests:
+## Development
 
-```bash
-make rename NAME=my-new-project
+```fish
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src
+uv run pytest
 ```
 
-### 3. Install dependencies and git hooks
+## Sources
 
-```bash
-make sync
-make hooks
-```
+- [FastF1](https://github.com/theOehrly/Fast-F1): F1 sessions since 2018
+- [Jolpica](https://github.com/jolpica/jolpica-f1): historical results (successor to Ergast)
+- Official F1 calendar (ECAL, via Google Calendar)
 
----
-
-## Available Commands
-
-| Command | Description |
-|---|---|
-| `make help` | Show all available commands |
-| `make sync` | Install runtime and dev dependencies using `uv` |
-| `make hooks` | Install pre-commit hooks into `.git/hooks` |
-| `make hooks-run` | Run pre-commit checks on all files |
-| `make test` | Run tests with `pytest` |
-| `make lint` | Check code with `ruff` |
-| `make lint-fix` | Automatically fix linting issues |
-| `make format` | Format code with `ruff` |
-| `make format-check` | Check code formatting without modifying |
-| `make typecheck` | Run static type checking with `pyright` |
-| `make audit` | Audit dependencies for vulnerabilities with `pip-audit` |
-| `make ci` | Run full verification pipeline locally (`lint`, `format-check`, `typecheck`, `audit`, `test`) |
-| `make clean` | Remove caches and build artifacts |
-| `make rename NAME=...` | Rename package and update configuration |
-
----
-
-## Project Structure
-
-```text
-.
-├── .github/workflows/ci.yml   # GitHub Actions CI workflow
-├── src/
-│   └── app_name/              # Source code directory (renamed via make rename)
-│       ├── __init__.py
-│       └── py.typed
-├── tests/
-│   ├── __init__.py
-│   └── test_smoke.py          # Initial smoke test
-├── .gitignore
-├── .pre-commit-config.yaml
-├── .python-version
-├── Makefile
-├── pyproject.toml
-└── README.md
-```
+Every chart ships with a footer crediting the sources used and the profile's handle.

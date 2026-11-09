@@ -28,7 +28,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install 3.13
 
       - name: Install dependencies
         run: uv sync --frozen
@@ -40,7 +40,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Check static typing
-        run: uv run pyright
+        run: uv run mypy src tests
 
       - name: Audit dependencies
         run: uv run pip-audit
