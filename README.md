@@ -29,7 +29,7 @@ Fill in the secret iCal address of the F1 Google Calendar in `.env`.
 ```fish
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy src
+uv run mypy src tests
 uv run pytest
 ```
 
