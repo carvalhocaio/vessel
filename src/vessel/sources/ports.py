@@ -1,7 +1,7 @@
 from typing import Protocol
 
-from vessel.curation.schema import RaceTables
-from vessel.domain import CalendarEntry, Event
+from vessel.curation.schema import RaceTables, SessionTables
+from vessel.domain import CalendarEntry, Event, SessionKind
 
 
 class SourceUnavailableError(RuntimeError):
@@ -18,3 +18,5 @@ class CalendarSource(Protocol):
 
 class SessionSource(Protocol):
     def race(self, event: Event) -> RaceTables: ...
+
+    def session(self, event: Event, kind: SessionKind) -> SessionTables: ...

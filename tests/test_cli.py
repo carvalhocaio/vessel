@@ -10,9 +10,9 @@ from vessel import __version__, cli
 from vessel.cache import FileCache
 from vessel.cli import app
 from vessel.config import Settings
-from vessel.curation import RaceTables
-from vessel.curation.race import CuratedRaceStore
-from vessel.domain import Event
+from vessel.curation import RaceTables, SessionTables
+from vessel.curation.store import CuratedSessionStore
+from vessel.domain import Event, SessionKind
 from vessel.sources.ports import SourceUnavailableError
 
 runner = CliRunner()
@@ -95,8 +95,8 @@ def race_env(
     monkeypatch.setattr(cli, "build_schedule", lambda _: FakeSchedule(schedule_2026))
     monkeypatch.setattr(
         cli,
-        "build_race_store",
-        lambda s: CuratedRaceStore(FileCache(s.curated_dir), source),
+        "build_session_store",
+        lambda s: CuratedSessionStore(FileCache(s.curated_dir), source),
     )
     monkeypatch.setattr(cli, "utc_now", lambda: datetime(2026, 11, 13, 17, tzinfo=UTC))
     return source
@@ -141,3 +141,76 @@ def test_race_explains_missing_timing(race_env: FakeSessionSource) -> None:
 
     assert result.exit_code == 1
     assert "fastf1 auth f1tv --authenticate" in result.output
+
+
+@pytest.fixture
+def long_run_env(
+    race_env: FakeSessionSource,
+    fp2_2026_20: SessionTables,
+    sprint_2026_17: SessionTables,
+) -> FakeSessionSource:
+    race_env.sessions[SessionKind.PRACTICE_2] = fp2_2026_20
+    race_env.sessions[SessionKind.SPRINT] = sprint_2026_17
+    return race_env
+
+
+def test_long_run_by_round_prints_table_and_writes_draft(
+    long_run_env: FakeSessionSource, tmp_path: Path
+) -> None:
+    result = runner.invoke(app, ["long-run", "--season", "2026", "--round", "20"])
+
+    assert result.exit_code == 0, result.output
+    assert "ANT  Mercedes" in result.stdout
+    assert "top_teams_pace_gap: 0,143 s/volta" in result.stdout
+    draft = tmp_path / "out" / "2026" / "20-sao-paulo" / "long_run" / "draft.json"
+    assert json.loads(draft.read_text(encoding="utf-8"))["segment"] == "long_run"
+
+
+def test_long_run_uses_sprint_on_sprint_weekends(
+    long_run_env: FakeSessionSource,
+) -> None:
+    result = runner.invoke(app, ["long-run", "--round", "17"])
+
+    assert result.exit_code == 0, result.output
+    assert "Singapore Grand Prix · rodada 17" in result.stdout
+    assert "intermediário" in result.stdout
+
+
+def test_long_run_defaults_to_last_finished_session(
+    long_run_env: FakeSessionSource,
+) -> None:
+    result = runner.invoke(app, ["long-run"])
+
+    assert result.exit_code == 0, result.output
+    assert "rodada 20" in result.stdout
+
+
+def test_long_run_session_option_overrides_default(
+    long_run_env: FakeSessionSource,
+) -> None:
+    result = runner.invoke(app, ["long-run", "--session", "sprint"])
+
+    assert result.exit_code == 0, result.output
+    assert "rodada 17" in result.stdout
+
+
+def test_long_run_rejects_session_missing_from_weekend(
+    long_run_env: FakeSessionSource,
+) -> None:
+    result = runner.invoke(app, ["long-run", "--round", "17", "--session", "fp2"])
+
+    assert result.exit_code == 1
+    assert "não tem a sessão fp2" in result.output
+
+
+def test_long_run_reports_sessions_without_long_runs(
+    long_run_env: FakeSessionSource, fp2_2026_20: SessionTables
+) -> None:
+    long_run_env.sessions[SessionKind.PRACTICE_2] = SessionTables(
+        fp2_2026_20.laps.iloc[0:0], fp2_2026_20.drivers
+    )
+
+    result = runner.invoke(app, ["long-run", "--round", "20"])
+
+    assert result.exit_code == 1
+    assert "Nenhum long run válido" in result.output

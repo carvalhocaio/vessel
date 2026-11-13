@@ -34,6 +34,41 @@ uv run vessel agenda --round 22      # a specific round
 uv run vessel agenda --json          # for the curator agent
 ```
 
+## F1 sign-in
+
+Since 2026, FastF1 needs an F1 account to download live timing (laps, stints, positions). Sign in once from a regular terminal; the token is stored by FastF1, outside the repo:
+
+```fish
+uv run python -m fastf1 auth f1tv --authenticate
+uv run python -m fastf1 auth f1tv --status
+```
+
+Curated tables land in `data/curated/<season>/<slug>/<session>/` and are not reloaded once the session is in parc fermé.
+
+## Volta Rápida
+
+Stints, lap-by-lap positions and fact candidates for the race.
+
+```fish
+uv run vessel race --season 2026 --round 20   # a specific race
+uv run vessel race                            # last finished race
+```
+
+Output: `data/out/<season>/<slug>/race_recap/` (`draft.json` and charts).
+
+## Long Run
+
+Race pace in practice: each driver's longest run of consecutive clean laps on one stint (at least 6, laps above 107% of the stint median dropped), ranked by median, with tyre degradation per lap. FP2 by default, the Sprint on sprint weekends.
+
+```fish
+uv run vessel long-run --season 2026 --round 20   # FP2 at São Paulo
+uv run vessel long-run --season 2026 --round 17   # Sprint at Singapore
+uv run vessel long-run                            # current or last GP
+uv run vessel long-run --round 20 --session fp3   # another session
+```
+
+Output: `data/out/<season>/<slug>/long_run/`. No fuel correction is applied; it is stated as a caveat in every draft.
+
 ## Draft contract
 
 Each segment produces a `draft.json` that the curator agent turns into a post. Facts carry value, pt-BR display text, context and source, so the agent writes words, never numbers.

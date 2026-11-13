@@ -2,9 +2,12 @@ import pandas as pd
 import pytest
 
 from tests.factories import load_fastf1_race_sample
-from vessel.curation import LAP_DTYPES, RESULT_DTYPES
+from vessel.curation import DRIVER_DTYPES, LAP_DTYPES, RESULT_DTYPES
+from vessel.domain import SessionKind
 from vessel.sources.fastf1_session import (
+    FASTF1_SESSIONS,
     UNKNOWN_COMPOUND_COLOR,
+    drivers_from_session,
     laps_from_session,
     results_from_session,
 )
@@ -70,3 +73,18 @@ def test_pit_lane_start_has_no_grid_slot(
     results = results_from_session(raw_results, TEAM_COLORS, NATIONALITIES)
 
     assert pd.isna(results.loc[results["driver"] == "BOR", "grid"].item())
+
+
+def test_drivers_table_has_identity_without_race_columns(
+    raw: tuple[pd.DataFrame, pd.DataFrame],
+) -> None:
+    drivers = drivers_from_session(raw[1], TEAM_COLORS, NATIONALITIES)
+
+    assert dict(drivers.dtypes.astype(str)) == DRIVER_DTYPES
+    bortoleto = drivers[drivers["driver"] == "BOR"].iloc[0]
+    assert (bortoleto["name"], bortoleto["team_color"]) == ("Bortoleto", "#ff2d00")
+    assert bortoleto["nationality"] == "Brazilian"
+
+
+def test_every_session_kind_maps_to_fastf1() -> None:
+    assert set(FASTF1_SESSIONS) == set(SessionKind)

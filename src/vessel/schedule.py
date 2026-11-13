@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -62,13 +63,21 @@ def next_event(events: tuple[Event, ...], now: datetime) -> Event | None:
     return min(upcoming, key=lambda event: event.round, default=None)
 
 
-def last_finished_race(events: tuple[Event, ...], now: datetime) -> Event | None:
+def last_finished(
+    events: tuple[Event, ...],
+    now: datetime,
+    session_of: Callable[[Event], SessionKind],
+) -> Event | None:
     finished = (
         event
         for event in events
-        if (race := event.session(SessionKind.RACE)) and race.ends_at <= now
+        if (session := event.session(session_of(event))) and session.ends_at <= now
     )
     return max(finished, key=lambda event: event.round, default=None)
+
+
+def last_finished_race(events: tuple[Event, ...], now: datetime) -> Event | None:
+    return last_finished(events, now, lambda _: SessionKind.RACE)
 
 
 class ReconciledSchedule:

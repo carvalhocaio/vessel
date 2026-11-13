@@ -4,6 +4,7 @@ from tests.factories import load_calendar_ics
 from vessel.domain import CalendarEntry, Event, SessionKind
 from vessel.schedule import (
     ReconciledSchedule,
+    last_finished,
     last_finished_race,
     next_event,
     reconcile,
@@ -141,3 +142,33 @@ def test_last_finished_race_none_before_season(
     schedule_2026: tuple[Event, ...],
 ) -> None:
     assert last_finished_race(schedule_2026, datetime(2026, 1, 1, tzinfo=UTC)) is None
+
+
+def test_last_finished_picks_current_gp_once_its_session_ended(
+    schedule_2026: tuple[Event, ...],
+) -> None:
+    def long_run(event: Event) -> SessionKind:
+        return event.long_run_session
+
+    before = last_finished(
+        schedule_2026, datetime(2026, 11, 6, 19, 30, tzinfo=UTC), long_run
+    )
+    after = last_finished(
+        schedule_2026, datetime(2026, 11, 6, 21, tzinfo=UTC), long_run
+    )
+
+    assert before is not None
+    assert before.round == 19
+    assert after is not None
+    assert after.round == 20
+
+
+def test_last_finished_by_fixed_session(schedule_2026: tuple[Event, ...]) -> None:
+    event = last_finished(
+        schedule_2026,
+        datetime(2026, 11, 13, 17, tzinfo=UTC),
+        lambda _: SessionKind.SPRINT,
+    )
+
+    assert event is not None
+    assert event.round == 17

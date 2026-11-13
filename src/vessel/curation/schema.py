@@ -18,12 +18,16 @@ LAP_DTYPES: dict[str, str] = {
     "is_accurate": "boolean",
 }
 
-RESULT_DTYPES: dict[str, str] = {
+DRIVER_DTYPES: dict[str, str] = {
     "driver": "string",
     "name": "string",
     "team": "string",
     "team_color": "string",
     "nationality": "string",
+}
+
+RESULT_DTYPES: dict[str, str] = {
+    **DRIVER_DTYPES,
     "grid": "Int16",
     "finish": "Int16",
     "classified": "boolean",
@@ -52,4 +56,16 @@ class RaceTables:
         return RaceTables(
             laps=conform(self.laps, LAP_DTYPES),
             results=conform(self.results, RESULT_DTYPES),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SessionTables:
+    laps: pd.DataFrame
+    drivers: pd.DataFrame
+
+    def conformed(self) -> "SessionTables":
+        return SessionTables(
+            laps=conform(self.laps, LAP_DTYPES),
+            drivers=conform(self.drivers, DRIVER_DTYPES),
         )

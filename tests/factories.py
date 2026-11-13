@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from vessel.curation import RaceTables
+from vessel.curation import RaceTables, SessionTables
 from vessel.domain import Event, EventFormat, Session, SessionKind
 from vessel.sources.fastf1_schedule import events_from_schedule
 
@@ -50,6 +50,17 @@ def load_race_2026_20() -> RaceTables:
     ).conformed()
 
 
+def load_session_tables(name: str) -> SessionTables:
+    return SessionTables(
+        laps=pd.read_parquet(FIXTURES / f"{name}_laps.parquet"),
+        drivers=pd.read_parquet(FIXTURES / f"{name}_drivers.parquet"),
+    ).conformed()
+
+
+def make_singapore() -> Event:
+    return next(event for event in load_schedule_2026() if event.round == 17)
+
+
 def load_fastf1_race_sample() -> tuple[pd.DataFrame, pd.DataFrame]:
     return (
         pd.read_parquet(FIXTURES / "fastf1_race_2026_20_laps_sample.parquet"),
@@ -58,13 +69,26 @@ def load_fastf1_race_sample() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 class FakeSessionSource:
-    def __init__(self, tables: RaceTables, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        tables: RaceTables,
+        sessions: dict[SessionKind, SessionTables] | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self._tables = tables
+        self.sessions = sessions or {}
         self.error = error
         self.calls = 0
 
     def race(self, event: Event) -> RaceTables:
+        self._call()
+        return self._tables
+
+    def session(self, event: Event, kind: SessionKind) -> SessionTables:
+        self._call()
+        return self.sessions[kind]
+
+    def _call(self) -> None:
         self.calls += 1
         if self.error is not None:
             raise self.error
-        return self._tables

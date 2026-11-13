@@ -1,9 +1,13 @@
 import pytest
 
+from vessel.domain import SessionKind
 from vessel.formatting import (
     compound_name,
     format_decimal,
     format_lap_time,
+    format_signed,
+    session_label,
+    session_phrase,
     slugify,
 )
 
@@ -48,3 +52,20 @@ def test_format_lap_time(seconds: float, expected: str) -> None:
 def test_compound_name_in_portuguese() -> None:
     assert compound_name("INTERMEDIATE") == "intermediário"
     assert compound_name("TEST_UNKNOWN") == "test_unknown"
+
+
+def test_format_lap_time_with_fewer_places() -> None:
+    assert format_lap_time(75.449, 1) == "1:15,4"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(0.0854, "+0,085"), (-0.032, "-0,032"), (0.0, "+0,000")]
+)
+def test_format_signed(value: float, expected: str) -> None:
+    assert format_signed(value, 3) == expected
+
+
+def test_session_labels_in_portuguese() -> None:
+    assert session_label(SessionKind.PRACTICE_2) == "TL2"
+    assert session_phrase(SessionKind.PRACTICE_2) == "no TL2"
+    assert session_phrase(SessionKind.SPRINT) == "na Sprint"
