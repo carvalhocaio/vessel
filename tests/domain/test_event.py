@@ -10,11 +10,11 @@ START = datetime(2027, 3, 14, 5, 0, tzinfo=UTC)
 
 
 def test_slug_combines_round_and_location(sao_paulo: Event) -> None:
-    assert sao_paulo.slug == "21-sao-paulo"
+    assert sao_paulo.slug == "20-sao-paulo"
 
 
 def test_ref_keeps_identity_only(sao_paulo: Event) -> None:
-    assert sao_paulo.ref == EventRef(season=2026, round=21, name="São Paulo Grand Prix")
+    assert sao_paulo.ref == EventRef(season=2026, round=20, name="São Paulo Grand Prix")
 
 
 def test_session_lookup(sao_paulo: Event) -> None:
