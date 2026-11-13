@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from vessel.curation import RaceTables
 from vessel.domain import Event, EventFormat, Session, SessionKind
 from vessel.sources.fastf1_schedule import events_from_schedule
 
@@ -40,3 +41,30 @@ def load_schedule_2026() -> tuple[Event, ...]:
 
 def load_calendar_ics() -> bytes:
     return (FIXTURES / "f1_calendar.ics").read_bytes()
+
+
+def load_race_2026_20() -> RaceTables:
+    return RaceTables(
+        laps=pd.read_parquet(FIXTURES / "race_2026_20_laps.parquet"),
+        results=pd.read_parquet(FIXTURES / "race_2026_20_results.parquet"),
+    ).conformed()
+
+
+def load_fastf1_race_sample() -> tuple[pd.DataFrame, pd.DataFrame]:
+    return (
+        pd.read_parquet(FIXTURES / "fastf1_race_2026_20_laps_sample.parquet"),
+        pd.read_parquet(FIXTURES / "fastf1_race_2026_20_results_sample.parquet"),
+    )
+
+
+class FakeSessionSource:
+    def __init__(self, tables: RaceTables, error: Exception | None = None) -> None:
+        self._tables = tables
+        self.error = error
+        self.calls = 0
+
+    def race(self, event: Event) -> RaceTables:
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        return self._tables

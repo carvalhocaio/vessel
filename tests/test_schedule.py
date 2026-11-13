@@ -2,7 +2,12 @@ from datetime import UTC, datetime, timedelta
 
 from tests.factories import load_calendar_ics
 from vessel.domain import CalendarEntry, Event, SessionKind
-from vessel.schedule import ReconciledSchedule, next_event, reconcile
+from vessel.schedule import (
+    ReconciledSchedule,
+    last_finished_race,
+    next_event,
+    reconcile,
+)
 from vessel.sources.calendar_source import parse_calendar
 
 LAS_VEGAS = 21
@@ -123,3 +128,16 @@ def test_reconciled_schedule_applies_calendar(
     race = vegas.session(SessionKind.RACE)
     assert race is not None
     assert race.ends_at == datetime(2026, 11, 22, 6, 0, tzinfo=UTC)
+
+
+def test_last_finished_race_ignores_upcoming(schedule_2026: tuple[Event, ...]) -> None:
+    event = last_finished_race(schedule_2026, datetime(2026, 11, 13, 17, tzinfo=UTC))
+
+    assert event is not None
+    assert event.round == 20
+
+
+def test_last_finished_race_none_before_season(
+    schedule_2026: tuple[Event, ...],
+) -> None:
+    assert last_finished_race(schedule_2026, datetime(2026, 1, 1, tzinfo=UTC)) is None

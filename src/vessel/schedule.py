@@ -62,6 +62,15 @@ def next_event(events: tuple[Event, ...], now: datetime) -> Event | None:
     return min(upcoming, key=lambda event: event.round, default=None)
 
 
+def last_finished_race(events: tuple[Event, ...], now: datetime) -> Event | None:
+    finished = (
+        event
+        for event in events
+        if (race := event.session(SessionKind.RACE)) and race.ends_at <= now
+    )
+    return max(finished, key=lambda event: event.round, default=None)
+
+
 class ReconciledSchedule:
     def __init__(self, base: ScheduleSource, calendar: CalendarSource | None) -> None:
         self._base = base

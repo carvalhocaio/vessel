@@ -1,6 +1,7 @@
 import pytest
 
-from tests.factories import load_schedule_2026, make_sao_paulo
+from tests.factories import load_race_2026_20, load_schedule_2026, make_sao_paulo
+from vessel.curation import RaceTables
 from vessel.domain import Event
 
 
@@ -12,3 +13,8 @@ def sao_paulo() -> Event:
 @pytest.fixture
 def schedule_2026() -> tuple[Event, ...]:
     return load_schedule_2026()
+
+
+@pytest.fixture
+def race_2026_20() -> RaceTables:
+    return load_race_2026_20()

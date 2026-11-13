@@ -1,6 +1,11 @@
 import pytest
 
-from vessel.formatting import format_decimal, slugify
+from vessel.formatting import (
+    compound_name,
+    format_decimal,
+    format_lap_time,
+    slugify,
+)
 
 
 @pytest.mark.parametrize(
@@ -30,3 +35,16 @@ def test_format_decimal_uses_pt_br_separators(
     value: float, places: int, expected: str
 ) -> None:
     assert format_decimal(value, places) == expected
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [(72.689, "1:12,689"), (59.9996, "1:00,000"), (9.5, "0:09,500")],
+)
+def test_format_lap_time(seconds: float, expected: str) -> None:
+    assert format_lap_time(seconds) == expected
+
+
+def test_compound_name_in_portuguese() -> None:
+    assert compound_name("INTERMEDIATE") == "intermediário"
+    assert compound_name("TEST_UNKNOWN") == "test_unknown"
