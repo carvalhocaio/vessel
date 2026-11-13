@@ -4,7 +4,15 @@ from typing import Any
 import pandas as pd
 
 from vessel.analytics.race import BRAZILIAN, clean_laps
-from vessel.domain import Fact, Source
+from vessel.analytics.registry import (
+    CalcInputs,
+    Finding,
+    Params,
+    calculation,
+    float_param,
+    int_param,
+)
+from vessel.domain import ParamValue, Source
 from vessel.formatting import (
     compound_name,
     format_decimal,
@@ -42,12 +50,16 @@ class NoLongRunError(ValueError):
     pass
 
 
-def long_run_laps(laps: pd.DataFrame) -> pd.DataFrame:
+def long_run_laps(
+    laps: pd.DataFrame,
+    min_laps: int = MIN_LONG_RUN_LAPS,
+    outlier_ratio: float = OUTLIER_RATIO,
+) -> pd.DataFrame:
     clean = clean_laps(laps).dropna(subset=["stint"]).sort_values(["driver", "lap"])
     candidates = [
         run
         for _, stint in clean.groupby(["driver", "stint"])
-        for run in _stint_runs(stint)
+        for run in _stint_runs(stint, min_laps, outlier_ratio)
     ]
     if not candidates:
         return clean.iloc[0:0]
@@ -62,13 +74,15 @@ def long_run_laps(laps: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(chosen.values(), ignore_index=True)
 
 
-def _stint_runs(stint: pd.DataFrame) -> list[pd.DataFrame]:
-    ceiling = float(stint["lap_time_s"].median()) * OUTLIER_RATIO
+def _stint_runs(
+    stint: pd.DataFrame, min_laps: int, outlier_ratio: float
+) -> list[pd.DataFrame]:
+    ceiling = float(stint["lap_time_s"].median()) * outlier_ratio
     sequence = stint["lap"].astype("int64").diff().ne(1).cumsum()
     runs = []
     for _, run in stint.groupby(sequence):
         kept = run[run["lap_time_s"] <= ceiling]
-        if len(kept) >= MIN_LONG_RUN_LAPS:
+        if len(kept) >= min_laps:
             runs.append(kept)
     return runs
 
@@ -81,8 +95,13 @@ def degradation(run: pd.DataFrame) -> float | None:
     return float(times.cov(tyre_life) / tyre_life.var())
 
 
-def long_runs(laps: pd.DataFrame, drivers: pd.DataFrame) -> pd.DataFrame:
-    selected = long_run_laps(laps)
+def long_runs(
+    laps: pd.DataFrame,
+    drivers: pd.DataFrame,
+    min_laps: int = MIN_LONG_RUN_LAPS,
+    outlier_ratio: float = OUTLIER_RATIO,
+) -> pd.DataFrame:
+    selected = long_run_laps(laps, min_laps, outlier_ratio)
     profiles = {str(row["driver"]): row for row in drivers.to_dict("records")}
     rows = []
     for driver, run in selected.groupby("driver"):
@@ -118,20 +137,33 @@ def team_ranking(runs: pd.DataFrame) -> pd.DataFrame:
     return best.assign(team_rank=range(1, len(best) + 1))
 
 
-def long_run_facts(runs: pd.DataFrame, source: Source) -> tuple[Fact, ...]:
-    if runs.empty:
-        raise NoLongRunError("no long run with enough clean laps")
-    facts = (
-        top_teams_comparison(runs, source),
-        highest_degradation(runs, source),
-        lowest_degradation(runs, source),
-        longest_long_run(runs, source),
-        best_brazilian_rank(runs, source),
+LONG_RUN_FACTS = (
+    "long_run.pace_gap_top_teams",
+    "long_run.highest_degradation",
+    "long_run.lowest_degradation",
+    "long_run.longest_run",
+    "long_run.best_brazilian_rank",
+)
+
+
+def long_run_params() -> dict[str, ParamValue]:
+    return {"min_laps": MIN_LONG_RUN_LAPS, "outlier_ratio": OUTLIER_RATIO}
+
+
+def runs_from(inputs: CalcInputs, params: Params) -> pd.DataFrame:
+    return long_runs(
+        inputs.session.laps,
+        inputs.session.drivers,
+        min_laps=int_param(params, "min_laps"),
+        outlier_ratio=float_param(params, "outlier_ratio"),
     )
-    return tuple(fact for fact in facts if fact is not None)
 
 
-def top_teams_comparison(runs: pd.DataFrame, source: Source) -> Fact | None:
+@calculation("long_run.pace_gap_top_teams", Source.FASTF1)
+def top_teams_comparison(inputs: CalcInputs, params: Params) -> Finding | None:
+    runs = runs_from(inputs, params)
+    if runs.empty:
+        return None
     ranking = team_ranking(runs)
     if len(ranking) < MIN_COMPARED:
         return None
@@ -142,14 +174,13 @@ def top_teams_comparison(runs: pd.DataFrame, source: Source) -> Fact | None:
         pair = (
             f"{compound_name(compound)} vs {compound_name(str(runner_up['compound']))}"
         )
-        return Fact(
+        return Finding(
             key="top_teams_compound_mismatch",
             value=pair,
             display=pair,
             context=f"{_run_phrase(leader)} e {_run_phrase(runner_up)} usaram "
             "compostos diferentes; nenhuma outra equipe fez long run com o pneu "
             f"{compound_name(compound)}, então não há comparação direta de ritmo.",
-            source=source,
         )
     rival = rivals.sort_values("median_s").iloc[0]
     gap = float(rival["median_s"]) - float(leader["median_s"])
@@ -163,37 +194,48 @@ def top_teams_comparison(runs: pd.DataFrame, source: Source) -> Fact | None:
             f" {runner_up['team']} foi a 2ª no ranking geral, mas com pneu "
             f"{compound_name(str(runner_up['compound']))}, sem comparação direta."
         )
-    return Fact(
+    return Finding(
         key="top_teams_pace_gap",
         value=round(gap, 3),
         unit="s/lap",
         display=f"{format_decimal(gap, 3)} s/volta",
         context=context,
-        source=source,
     )
 
 
-def highest_degradation(runs: pd.DataFrame, source: Source) -> Fact | None:
+@calculation("long_run.highest_degradation", Source.FASTF1)
+def highest_degradation(inputs: CalcInputs, params: Params) -> Finding | None:
+    runs = runs_from(inputs, params)
+    if runs.empty:
+        return None
     rated = runs.dropna(subset=["degradation_s"])
     if rated.empty:
         return None
     return _degradation_fact(
-        "highest_degradation", rated.sort_values("degradation_s").iloc[-1], source
+        "highest_degradation", rated.sort_values("degradation_s").iloc[-1]
     )
 
 
-def lowest_degradation(runs: pd.DataFrame, source: Source) -> Fact | None:
+@calculation("long_run.lowest_degradation", Source.FASTF1)
+def lowest_degradation(inputs: CalcInputs, params: Params) -> Finding | None:
+    runs = runs_from(inputs, params)
+    if runs.empty:
+        return None
     rated = runs.dropna(subset=["degradation_s"])
     if len(rated) < MIN_COMPARED:
         return None
     return _degradation_fact(
-        "lowest_degradation", rated.sort_values("degradation_s").iloc[0], source
+        "lowest_degradation", rated.sort_values("degradation_s").iloc[0]
     )
 
 
-def longest_long_run(runs: pd.DataFrame, source: Source) -> Fact | None:
+@calculation("long_run.longest_run", Source.FASTF1)
+def longest_long_run(inputs: CalcInputs, params: Params) -> Finding | None:
+    runs = runs_from(inputs, params)
+    if runs.empty:
+        return None
     run = runs.sort_values(["laps", "median_s"], ascending=[False, True]).iloc[0]
-    return Fact(
+    return Finding(
         key="longest_long_run",
         value=int(run["laps"]),
         unit="laps",
@@ -202,30 +244,32 @@ def longest_long_run(runs: pd.DataFrame, source: Source) -> Fact | None:
         f"{int(run['laps'])} voltas limpas de pneu "
         f"{compound_name(str(run['compound']))}, mediana "
         f"{format_lap_time(float(run['median_s']))}.",
-        source=source,
     )
 
 
-def best_brazilian_rank(runs: pd.DataFrame, source: Source) -> Fact | None:
+@calculation("long_run.best_brazilian_rank", Source.FASTF1)
+def best_brazilian_rank(inputs: CalcInputs, params: Params) -> Finding | None:
+    runs = runs_from(inputs, params)
+    if runs.empty:
+        return None
     brazilians = runs[runs["nationality"] == BRAZILIAN]
     if brazilians.empty:
         return None
     run = brazilians.sort_values("rank").iloc[0]
     rank, total = int(run["rank"]), len(runs)
-    return Fact(
+    return Finding(
         key="best_brazilian_rank",
         value=rank,
         unit="position",
         display=f"{rank}º de {total}",
         context=f"{run['name']} ({run['team']}) foi o {rank}º entre {total} pilotos "
         f"no ranking de long run por mediana, com {_run_detail(run)}.",
-        source=source,
     )
 
 
-def _degradation_fact(key: str, run: pd.Series, source: Source) -> Fact:
+def _degradation_fact(key: str, run: pd.Series) -> Finding:
     value = float(run["degradation_s"])
-    return Fact(
+    return Finding(
         key=key,
         value=round(value, 3),
         unit="s/lap",
@@ -233,7 +277,6 @@ def _degradation_fact(key: str, run: pd.Series, source: Source) -> Fact:
         context=f"{run['name']} ({run['team']}): tempo de volta variou "
         f"{format_signed(value, 3)} s por volta de vida do pneu, com "
         f"{_run_detail(run)}.",
-        source=source,
     )
 
 

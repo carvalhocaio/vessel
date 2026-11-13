@@ -1,27 +1,38 @@
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-from vessel.analytics.circuit_history import FEW_EDITIONS, circuit_facts, editions
+from vessel.analytics.circuit_history import (
+    CIRCUIT_FACTS,
+    FEW_EDITIONS,
+    circuit_params,
+    editions,
+)
 from vessel.analytics.form import (
+    CHAMPIONSHIP_FACTS,
+    FORM_FACTS,
     ChampionshipMath,
-    championship_facts,
     championship_math,
-    current_grid,
-    form_facts,
+    championship_params,
+    form_params,
     recent_form,
 )
-from vessel.charts.output import save_chart
-from vessel.charts.specs.circuit_preview import (
-    grid_timeline_spec,
-    ranked_dots_spec,
+from vessel.analytics.registry import CalcInputs, compute_facts
+from vessel.charts.output import save_registered_chart
+from vessel.curation.schema import RaceTables, SeasonTables
+from vessel.domain import (
+    ChartRef,
+    CircuitHistoryRef,
+    Draft,
+    Event,
+    SeasonTableRef,
+    Segment,
+    SessionTableRef,
+    TableRef,
 )
-from vessel.curation.schema import SeasonTables
-from vessel.domain import ChartRef, Draft, Event, Segment, Source
-from vessel.reports.drafts import draft_dir, write_draft
+from vessel.reports.drafts import Verifier, draft_dir, publish_draft
 
 FIXED_CAVEATS = (
     "O regulamento técnico novo de 2026 reduz o peso do histórico do circuito.",
@@ -36,6 +47,14 @@ class Preview:
     math: ChampionshipMath | None
 
 
+@dataclass(frozen=True, slots=True)
+class PreviewInputs:
+    circuit: CircuitHistoryRef
+    history: pd.DataFrame
+    season: SeasonTables
+    last_race: tuple[SessionTableRef, RaceTables] | None = None
+
+
 def circuit_preview_dir(out_dir: Path, event: Event) -> Path:
     return draft_dir(out_dir, event, Segment.CIRCUIT_PREVIEW)
 
@@ -43,52 +62,58 @@ def circuit_preview_dir(out_dir: Path, event: Event) -> Path:
 def build_circuit_preview(
     event: Event,
     events: tuple[Event, ...],
-    *,
-    history: pd.DataFrame,
-    season: SeasonTables,
-    team_colors: Mapping[str, str],
+    data: PreviewInputs,
     directory: Path,
+    *,
     handle: str,
     now: datetime,
+    verify: Verifier,
 ) -> Preview:
     directory.mkdir(parents=True, exist_ok=True)
-    form = recent_form(season.results)
-    math = championship_math(season.standings, events, event)
+    season_ref = SeasonTableRef(season=event.season)
+    inputs = CalcInputs(
+        history_table=data.history,
+        season_tables=data.season,
+        race_tables=data.last_race[1] if data.last_race else None,
+    )
+    location = circuit_params(event.location, data.circuit.editions)
+    form = form_params()
+    title = championship_params(events, event)
     facts = (
-        circuit_facts(
-            history, current_grid(season.results), event.location, Source.JOLPICA
-        )
-        + form_facts(form, Source.JOLPICA)
-        + championship_facts(math, Source.JOLPICA)
+        compute_facts(CIRCUIT_FACTS, inputs, (data.circuit, season_ref), location)
+        + compute_facts(FORM_FACTS, inputs, (season_ref,), form)
+        + compute_facts(CHAMPIONSHIP_FACTS, inputs, (season_ref,), title)
     )
     charts: list[ChartRef] = []
-    if not history.empty:
+    if not data.history.empty:
         charts.append(
-            save_chart(
-                grid_timeline_spec(history, event.location),
-                directory,
-                "winners",
-                handle,
+            save_registered_chart(
+                "chart.winners",
+                inputs,
+                (data.circuit,),
+                location,
+                (directory, "winners", handle),
             )
         )
-    if not form.empty and not season.standings.empty:
+    if not recent_form(data.season.results).empty and not data.season.standings.empty:
+        form_refs: tuple[TableRef, ...] = (season_ref,)
+        if data.last_race:
+            form_refs += (data.last_race[0],)
         charts.append(
-            save_chart(
-                ranked_dots_spec(form, season.standings, team_colors),
-                directory,
-                "form",
-                handle,
+            save_registered_chart(
+                "chart.form", inputs, form_refs, form, (directory, "form", handle)
             )
         )
+    math = championship_math(data.season.standings, title)
     draft = Draft(
         segment=Segment.CIRCUIT_PREVIEW,
         event=event.ref,
         facts=facts,
-        caveats=_caveats(history, math),
+        caveats=_caveats(data.history, math),
         charts=tuple(charts),
         generated_at=now,
     )
-    write_draft(draft, directory)
+    publish_draft(draft, directory, verify)
     return Preview(draft=draft, math=math)
 
 

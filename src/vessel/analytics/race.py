@@ -1,9 +1,9 @@
-from collections.abc import Callable
 from dataclasses import dataclass
 
 import pandas as pd
 
-from vessel.domain import Fact, Source
+from vessel.analytics.registry import CalcInputs, Finding, Params, calculation
+from vessel.domain import Source
 from vessel.formatting import compound_name, format_decimal, format_lap_time
 
 NEUTRALISED_STATUSES = frozenset("4567")
@@ -125,63 +125,53 @@ def highlighted_drivers(results: pd.DataFrame) -> set[str]:
     return {str(driver) for driver in (*podium, *brazilians)}
 
 
-def race_facts(
-    laps: pd.DataFrame, results: pd.DataFrame, source: Source
-) -> tuple[Fact, ...]:
-    builders: tuple[
-        Callable[[pd.DataFrame, pd.DataFrame, Source], Fact | None], ...
-    ] = (
-        biggest_gain,
-        biggest_loss,
-        longest_stint,
-        fastest_lap,
-        winner_pace_gap_p2,
-        winner_pit_stops,
-    )
-    return tuple(
-        fact for build in builders if (fact := build(laps, results, source)) is not None
-    )
+RACE_FACTS = (
+    "race.biggest_gain",
+    "race.biggest_loss",
+    "race.longest_stint",
+    "race.fastest_lap",
+    "race.winner_pace_gap_p2",
+    "race.winner_pit_stops",
+)
 
 
-def biggest_gain(
-    laps: pd.DataFrame, results: pd.DataFrame, source: Source
-) -> Fact | None:
+@calculation("race.biggest_gain", Source.FASTF1)
+def biggest_gain(inputs: CalcInputs, params: Params) -> Finding | None:
+    laps, results = inputs.race.laps, inputs.race.results
     gainers = [entry for entry in classified(results, laps) if entry.change > 0]
     if not gainers:
         return None
     best = max(gainers, key=lambda entry: (entry.change, -entry.finish))
-    return Fact(
+    return Finding(
         key="biggest_gain",
         value=best.change,
         unit="positions",
         display=f"+{best.change} posições",
         context=f"{best.name} ({best.team}) {_start_phrase(best)} e terminou em "
         f"P{best.finish}; maior ganho entre os classificados.",
-        source=source,
     )
 
 
-def biggest_loss(
-    laps: pd.DataFrame, results: pd.DataFrame, source: Source
-) -> Fact | None:
+@calculation("race.biggest_loss", Source.FASTF1)
+def biggest_loss(inputs: CalcInputs, params: Params) -> Finding | None:
+    laps, results = inputs.race.laps, inputs.race.results
     losers = [entry for entry in classified(results, laps) if entry.change < 0]
     if not losers:
         return None
     worst = min(losers, key=lambda entry: (entry.change, -entry.finish))
-    return Fact(
+    return Finding(
         key="biggest_loss",
         value=worst.change,
         unit="positions",
         display=f"{worst.change} posições",
         context=f"{worst.name} ({worst.team}) {_start_phrase(worst)} e terminou em "
         f"P{worst.finish}; maior perda entre os classificados.",
-        source=source,
     )
 
 
-def longest_stint(
-    laps: pd.DataFrame, results: pd.DataFrame, source: Source
-) -> Fact | None:
+@calculation("race.longest_stint", Source.FASTF1)
+def longest_stint(inputs: CalcInputs, params: Params) -> Finding | None:
+    laps, results = inputs.race.laps, inputs.race.results
     stints = stint_summary(laps)
     if stints.empty:
         return None
@@ -190,7 +180,7 @@ def longest_stint(
     best = stints.sort_values(["laps", "finish"], ascending=[False, True]).iloc[0]
     compound = compound_name(str(best["compound"]))
     name = driver_names(results).get(str(best["driver"]), str(best["driver"]))
-    return Fact(
+    return Finding(
         key="longest_stint",
         value=int(best["laps"]),
         unit="laps",
@@ -198,13 +188,12 @@ def longest_stint(
         context=f"{name} ficou {int(best['laps'])} voltas com o pneu "
         f"{compound}, da volta {int(best['lap_start'])} à {int(best['lap_end'])}; "
         "stint mais longo da corrida.",
-        source=source,
     )
 
 
-def fastest_lap(
-    laps: pd.DataFrame, results: pd.DataFrame, source: Source
-) -> Fact | None:
+@calculation("race.fastest_lap", Source.FASTF1)
+def fastest_lap(inputs: CalcInputs, params: Params) -> Finding | None:
+    laps, results = inputs.race.laps, inputs.race.results
     timed = laps.dropna(subset=["lap_time_s"])
     if timed.empty:
         return None
@@ -214,20 +203,19 @@ def fastest_lap(
     tyre = f"pneu {compound_name(str(best['compound']))}"
     if pd.notna(best["tyre_life"]):
         tyre += f" de {int(best['tyre_life'])} voltas"
-    return Fact(
+    return Finding(
         key="fastest_lap",
         value=round(seconds, 3),
         unit="s",
         display=format_lap_time(seconds),
         context=f"{name} fez a volta mais rápida na volta {int(best['lap'])}, "
         f"com {tyre}.",
-        source=source,
     )
 
 
-def winner_pace_gap_p2(
-    laps: pd.DataFrame, results: pd.DataFrame, source: Source
-) -> Fact | None:
+@calculation("race.winner_pace_gap_p2", Source.FASTF1)
+def winner_pace_gap_p2(inputs: CalcInputs, params: Params) -> Finding | None:
+    laps, results = inputs.race.laps, inputs.race.results
     ordered = results[results["classified"].fillna(value=False).astype(bool)]
     ordered = ordered.sort_values("finish")
     if len(ordered) < 2:  # noqa: PLR2004
@@ -241,7 +229,7 @@ def winner_pace_gap_p2(
         return None
     gap = float(second_laps.median()) - float(first_laps.median())
     faster = first if gap >= 0 else second
-    return Fact(
+    return Finding(
         key="winner_pace_gap_p2",
         value=round(gap, 3),
         unit="s/lap",
@@ -250,13 +238,12 @@ def winner_pace_gap_p2(
         f"{format_lap_time(float(first_laps.median()))} ({len(first_laps)} voltas) "
         f"contra {names[second]} {format_lap_time(float(second_laps.median()))} "
         f"({len(second_laps)} voltas); {names[faster]} foi mais rápido.",
-        source=source,
     )
 
 
-def winner_pit_stops(
-    laps: pd.DataFrame, results: pd.DataFrame, source: Source
-) -> Fact | None:
+@calculation("race.winner_pit_stops", Source.FASTF1)
+def winner_pit_stops(inputs: CalcInputs, params: Params) -> Finding | None:
+    laps, results = inputs.race.laps, inputs.race.results
     driver = winner(results)
     if driver not in set(laps["driver"]):
         return None
@@ -264,14 +251,13 @@ def winner_pit_stops(
     compounds = stint_summary(laps).query("driver == @driver")["compound"]
     sequence = " → ".join(compound_name(str(compound)) for compound in compounds)
     noun = "parada" if stops == 1 else "paradas"
-    return Fact(
+    return Finding(
         key="winner_pit_stops",
         value=stops,
         unit="stops",
         display=f"{stops} {noun}",
         context=f"{driver_names(results)[driver]} venceu com {stops} {noun} "
         f"({sequence}).",
-        source=source,
     )
 
 

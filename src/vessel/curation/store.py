@@ -59,7 +59,7 @@ def fetch_frames(
         if (data := cache.get(key, freshness)) is not None
     }
     if len(fresh) == len(keys):
-        return _decode(fresh, schemas)
+        return decode_frames(fresh, schemas)
     try:
         frames = load()
     except Exception:
@@ -71,7 +71,7 @@ def fetch_frames(
         if len(stale) < len(keys):
             raise
         logger.warning("serving stale curated tables for %s", ", ".join(keys.values()))
-        return _decode(stale, schemas)
+        return decode_frames(stale, schemas)
     for name, key in keys.items():
         cache.put(key, _encode(frames[name]))
     return frames
@@ -122,7 +122,11 @@ def _frames(tables: RaceTables | SessionTables) -> Frames:
 
 
 def _key(event: Event, kind: SessionKind, name: str) -> str:
-    return f"{session_prefix(event, kind)}/{name}{PARQUET_SUFFIX}"
+    return session_key(event.season, event.slug, kind, name)
+
+
+def session_key(season: int, slug: str, kind: SessionKind, name: str) -> str:
+    return f"{season}/{slug}/{kind.value}/{name}{PARQUET_SUFFIX}"
 
 
 def _encode(frame: pd.DataFrame) -> bytes:
@@ -131,7 +135,7 @@ def _encode(frame: pd.DataFrame) -> bytes:
     return buffer.getvalue()
 
 
-def _decode(data: Mapping[str, bytes], schemas: Schemas) -> Frames:
+def decode_frames(data: Mapping[str, bytes], schemas: Schemas) -> Frames:
     return {
         name: conform(pd.read_parquet(io.BytesIO(raw)), schemas[name])
         for name, raw in data.items()

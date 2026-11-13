@@ -12,8 +12,9 @@ from pydantic import (
 )
 
 from vessel.domain.event import EventRef
+from vessel.domain.provenance import Provenance
 
-SCHEMA_VERSION: Literal[2] = 2
+SCHEMA_VERSION: Literal[3] = 3
 
 
 class Source(StrEnum):
@@ -45,6 +46,7 @@ class Fact(BaseModel):
     display: str = Field(min_length=1)
     context: str = Field(min_length=1)
     source: Source
+    provenance: Provenance
 
 
 class ChartRef(BaseModel):
@@ -54,6 +56,7 @@ class ChartRef(BaseModel):
     spec_path: str
     preset: ChartPreset
     sources: tuple[Source, ...] = Field(min_length=1)
+    provenance: Provenance
 
     @field_validator("path", "spec_path")
     @classmethod
@@ -67,7 +70,7 @@ class ChartRef(BaseModel):
 class Draft(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[2] = SCHEMA_VERSION
+    schema_version: Literal[3] = SCHEMA_VERSION
     segment: Segment
     event: EventRef
     facts: tuple[Fact, ...] = Field(min_length=1)

@@ -23,7 +23,9 @@ Present the plan (files, contracts, tests) and wait for approval. List the decis
 ## 3. Analytics (`src/vessel/analytics/<name>.py`)
 
 - Pure functions; reuse `clean_laps`, `stint_summary`, `current_grid`, `driver_names`, `BRAZILIAN`.
-- `<name>_facts(...) -> tuple[Fact, ...]` with stable snake_case keys, pt-BR `display` and `context`; omit a fact that cannot be computed instead of inventing a value.
+- One registered calculation per fact: `@calculation("<area>.<name>", Source.X)` on a pure `(inputs: CalcInputs, params: Params) -> Finding | None`; list the keys in a `<AREA>_FACTS` tuple. Stable snake_case fact keys, pt-BR `display` and `context`; return `None` when it cannot be computed instead of inventing a value.
+- Everything the calculation depends on is either a curated table (a `TableRef` in the provenance) or a parameter in `params` (read with `int_param`/`float_param`/`str_param`); never read the clock, the schedule or a constant the verifier can't see.
+- Charts: `@chart_calculation("chart.<name>")` returning the `ChartSpec`.
 - Respect `config/event_status.toml`: cancelled GPs never count; at-risk ones become caveats.
 
 ## 4. Chart (`src/vessel/charts/<name>.py`)
@@ -32,7 +34,8 @@ Follow the `chart-check` skill.
 
 ## 5. Report (`src/vessel/reports/<name>.py`)
 
-- `draft_dir(out_dir, event, Segment.X)` and `write_draft`; caveats for every known limitation.
+- `draft_dir(out_dir, event, Segment.X)`; facts via `compute_facts(KEYS, inputs, refs, params)`, charts via `save_registered_chart`; publish with `publish_draft(draft, directory, verify)` so the draft is verified against the curated parquet before it becomes `draft.json`. Caveats for every known limitation.
+- If the segment reads a new kind of curated table, add a `TableRef` kind and teach `CuratedTables` (and `producing_command`) to load it.
 - Add the `Segment` value in `domain/draft.py` if new.
 
 ## 6. CLI

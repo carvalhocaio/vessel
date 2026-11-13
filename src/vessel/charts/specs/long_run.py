@@ -1,6 +1,7 @@
 import pandas as pd
 
-from vessel.analytics.long_run import MIN_LONG_RUN_LAPS, team_ranking
+from vessel.analytics.long_run import MIN_LONG_RUN_LAPS, runs_from, team_ranking
+from vessel.analytics.registry import CalcInputs, Params, chart_calculation, str_param
 from vessel.domain import (
     Axis,
     AxisFormat,
@@ -55,3 +56,9 @@ def _series(run: dict[object, object]) -> RangedSeries:
         detail_label=f"{run['driver']} · {compound_name(str(run['compound']))} · "
         f"{run['laps']} voltas",
     )
+
+
+@chart_calculation("chart.long_run")
+def long_run_chart(inputs: CalcInputs, params: Params) -> RangedDotsSpec:
+    kind = SessionKind(str_param(params, "session_kind"))
+    return ranged_dots_spec(runs_from(inputs, params), kind)

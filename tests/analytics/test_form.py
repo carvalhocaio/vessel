@@ -3,18 +3,22 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from tests.factories import facts_for
 from vessel.analytics.form import (
+    CHAMPIONSHIP_FACTS,
     DECIDED,
+    FORM_FACTS,
     NO,
     YES,
-    championship_facts,
     championship_math,
+    championship_params,
     current_grid,
-    form_facts,
+    form_params,
     recent_form,
 )
+from vessel.analytics.registry import CalcInputs
 from vessel.curation import STANDING_DTYPES, SeasonTables, conform
-from vessel.domain import Event, EventNotice, EventStatus, Source
+from vessel.domain import Event, EventNotice, EventStatus
 
 
 def by_round(events: tuple[Event, ...], round_: int) -> Event:
@@ -65,7 +69,7 @@ def test_recent_form_uses_last_five_races(season_2026: SeasonTables) -> None:
 
 def test_form_facts(season_2026: SeasonTables) -> None:
     facts = {
-        f.key: f for f in form_facts(recent_form(season_2026.results), Source.JOLPICA)
+        **facts_for(FORM_FACTS, CalcInputs(season_tables=season_2026), form_params())
     }
 
     assert facts["form_best_average"].display == "média 1,6"
@@ -79,7 +83,9 @@ def test_title_already_decided_before_las_vegas(
 ) -> None:
     events = with_status(schedule_2026, EventStatus.AT_RISK, 22, 23)
 
-    math = championship_math(season_2026.standings, events, by_round(events, 21))
+    math = championship_math(
+        season_2026.standings, championship_params(events, by_round(events, 21))
+    )
 
     assert math is not None
     assert math.gap == 111
@@ -92,7 +98,9 @@ def test_title_already_decided_before_las_vegas(
 def test_cancelled_rounds_do_not_count(schedule_2026: tuple[Event, ...]) -> None:
     events = with_status(schedule_2026, EventStatus.CANCELLED, 22)
 
-    math = championship_math(standings(300, 260), events, by_round(events, 21))
+    math = championship_math(
+        standings(300, 260), championship_params(events, by_round(events, 21))
+    )
 
     assert math is not None
     assert math.available == 50
@@ -101,7 +109,8 @@ def test_cancelled_rounds_do_not_count(schedule_2026: tuple[Event, ...]) -> None
 
 def test_title_can_be_decided_here(schedule_2026: tuple[Event, ...]) -> None:
     math = championship_math(
-        standings(300, 270), schedule_2026, by_round(schedule_2026, 21)
+        standings(300, 270),
+        championship_params(schedule_2026, by_round(schedule_2026, 21)),
     )
 
     assert math is not None
@@ -111,7 +120,8 @@ def test_title_can_be_decided_here(schedule_2026: tuple[Event, ...]) -> None:
 
 def test_title_cannot_be_decided_here(schedule_2026: tuple[Event, ...]) -> None:
     math = championship_math(
-        standings(300, 280), schedule_2026, by_round(schedule_2026, 21)
+        standings(300, 280),
+        championship_params(schedule_2026, by_round(schedule_2026, 21)),
     )
 
     assert math is not None
@@ -121,7 +131,9 @@ def test_title_cannot_be_decided_here(schedule_2026: tuple[Event, ...]) -> None:
 def test_sprint_weekend_adds_sprint_points(schedule_2026: tuple[Event, ...]) -> None:
     singapore = by_round(schedule_2026, 17)
 
-    math = championship_math(standings(300, 100), schedule_2026, singapore)
+    math = championship_math(
+        standings(300, 100), championship_params(schedule_2026, singapore)
+    )
 
     assert math is not None
     assert math.at_stake_here == 33
@@ -131,11 +143,9 @@ def test_sprint_weekend_adds_sprint_points(schedule_2026: tuple[Event, ...]) -> 
 def test_championship_facts(
     season_2026: SeasonTables, schedule_2026: tuple[Event, ...]
 ) -> None:
-    math = championship_math(
-        season_2026.standings, schedule_2026, by_round(schedule_2026, 21)
-    )
+    params = championship_params(schedule_2026, by_round(schedule_2026, 21))
 
-    facts = {f.key: f for f in championship_facts(math, Source.JOLPICA)}
+    facts = facts_for(CHAMPIONSHIP_FACTS, CalcInputs(season_tables=season_2026), params)
 
     assert facts["championship_gap"].display == "111 pontos"
     assert facts["championship_points_available"].value == 75

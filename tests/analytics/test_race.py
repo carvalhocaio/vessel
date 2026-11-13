@@ -1,22 +1,23 @@
 import pandas as pd
 import pytest
 
+from tests.factories import facts_for
 from vessel.analytics.race import (
+    RACE_FACTS,
     classified,
     clean_laps,
     finishing_order,
     highlighted_drivers,
     positions_by_lap,
-    race_facts,
     stint_summary,
 )
+from vessel.analytics.registry import CalcInputs
 from vessel.curation import RaceTables
 from vessel.domain import Fact, Source
 
 
 def facts_by_key(tables: RaceTables) -> dict[str, Fact]:
-    facts = race_facts(tables.laps, tables.results, Source.FASTF1)
-    return {fact.key: fact for fact in facts}
+    return facts_for(RACE_FACTS, CalcInputs(race_tables=tables))
 
 
 def test_clean_laps_drop_first_lap_pit_laps_and_neutralised_laps(

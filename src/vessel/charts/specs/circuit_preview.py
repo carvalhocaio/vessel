@@ -3,6 +3,9 @@ from collections.abc import Mapping
 import pandas as pd
 
 from vessel.analytics.circuit_history import winners
+from vessel.analytics.form import form_from
+from vessel.analytics.registry import CalcInputs, Params, chart_calculation, str_param
+from vessel.charts.specs.race import team_colors
 from vessel.domain import (
     Axis,
     AxisFormat,
@@ -94,3 +97,15 @@ def _winners_title(poles: int, total: int, location: str) -> str:
     if poles == 0:
         return f"A pole não venceu nenhuma das últimas {total} em {location}"
     return f"A pole venceu {poles} das últimas {total} em {location}"
+
+
+@chart_calculation("chart.winners")
+def winners_chart(inputs: CalcInputs, params: Params) -> GridTimelineSpec:
+    return grid_timeline_spec(inputs.history, str_param(params, "location"))
+
+
+@chart_calculation("chart.form")
+def form_chart(inputs: CalcInputs, params: Params) -> RankedDotsSpec:
+    race = inputs.race_tables
+    colors = team_colors(race.results) if race is not None else {}
+    return ranked_dots_spec(form_from(inputs, params), inputs.season.standings, colors)

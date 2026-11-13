@@ -20,10 +20,9 @@ class CuratedHistoryStore:
     def circuit(
         self, circuit_id: str, before_season: int, editions: int
     ) -> pd.DataFrame:
-        key = f"history/circuits/{circuit_id}/before-{before_season}-last-{editions}"
         frames = fetch_frames(
             self._cache,
-            {"results": f"{key}.parquet"},
+            {"results": circuit_history_key(circuit_id, before_season, editions)},
             Forever(),
             {"results": HISTORY_DTYPES},
             lambda: {
@@ -38,15 +37,25 @@ class CuratedHistoryStore:
         season = events[0].season
         frames = fetch_frames(
             self._cache,
-            {
-                "results": f"{season}/season/results.parquet",
-                "standings": f"{season}/season/standings.parquet",
-            },
+            season_keys(season),
             _season_freshness(events, now),
             {"results": HISTORY_DTYPES, "standings": STANDING_DTYPES},
             lambda: _season_frames(self._source.season(season)),
         )
         return SeasonTables(results=frames["results"], standings=frames["standings"])
+
+
+def circuit_history_key(circuit_id: str, before_season: int, editions: int) -> str:
+    return (
+        f"history/circuits/{circuit_id}/before-{before_season}-last-{editions}.parquet"
+    )
+
+
+def season_keys(season: int) -> dict[str, str]:
+    return {
+        "results": f"{season}/season/results.parquet",
+        "standings": f"{season}/season/standings.parquet",
+    }
 
 
 def _season_freshness(events: tuple[Event, ...], now: datetime) -> Freshness:

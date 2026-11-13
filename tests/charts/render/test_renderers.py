@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 from PIL import Image
 
+from tests.factories import TEST_PROVENANCE
 from vessel.analytics.form import recent_form
 from vessel.analytics.long_run import long_runs
 from vessel.analytics.race import positions_by_lap, stint_summary
@@ -47,7 +48,9 @@ def test_every_kind_renders_the_preset_size(
     tmp_path: Path, specs: dict[str, ChartSpec], preset: ChartPreset
 ) -> None:
     for name, spec in specs.items():
-        ref = save_chart(spec, tmp_path, name, HANDLE, preset)
+        ref = save_chart(
+            spec, tmp_path, name, HANDLE, provenance=TEST_PROVENANCE, preset=preset
+        )
 
         with Image.open(tmp_path / ref.path) as image:
             assert image.size == PRESET_SIZES_PX[preset]
@@ -56,7 +59,13 @@ def test_every_kind_renders_the_preset_size(
 def test_save_chart_writes_spec_next_to_png(
     tmp_path: Path, specs: dict[str, ChartSpec]
 ) -> None:
-    ref = save_chart(specs["positions"], tmp_path, "positions", HANDLE)
+    ref = save_chart(
+        specs["positions"],
+        tmp_path,
+        "positions",
+        HANDLE,
+        provenance=TEST_PROVENANCE,
+    )
 
     assert ref.path == "charts/positions_x.png"
     assert ref.spec_path == "charts/positions.json"

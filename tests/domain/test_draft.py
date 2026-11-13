@@ -9,11 +9,26 @@ from vessel.domain import (
     Draft,
     Event,
     Fact,
+    Provenance,
     Segment,
+    SessionKind,
+    SessionTableRef,
     Source,
 )
 
 GENERATED_AT = datetime(2026, 11, 6, 23, 10, tzinfo=UTC)
+PROVENANCE = Provenance(
+    calculation="long_run.pace_gap_top_teams",
+    inputs=(
+        SessionTableRef(
+            season=2026,
+            round=20,
+            slug="20-sao-paulo",
+            session_kind=SessionKind.PRACTICE_2,
+        ),
+    ),
+    params={"min_laps": 6, "outlier_ratio": 1.07},
+)
 
 
 def _fact(key: str = "pace_gap_top2", source: Source = Source.FASTF1) -> Fact:
@@ -24,6 +39,7 @@ def _fact(key: str = "pace_gap_top2", source: Source = Source.FASTF1) -> Fact:
         display="0,2 s",
         context="média de 12 voltas no pneu médio, TL2",
         source=source,
+        provenance=PROVENANCE,
     )
 
 
@@ -46,6 +62,7 @@ def test_round_trips_through_json(sao_paulo: Event) -> None:
                 spec_path="charts/long_run.json",
                 preset=ChartPreset.X,
                 sources=(Source.FASTF1,),
+                provenance=PROVENANCE,
             ),
         ),
     )
@@ -54,7 +71,7 @@ def test_round_trips_through_json(sao_paulo: Event) -> None:
 
 
 def test_schema_version_is_pinned(sao_paulo: Event) -> None:
-    assert _draft(sao_paulo).schema_version == 2
+    assert _draft(sao_paulo).schema_version == 3
 
 
 def test_sources_merge_facts_and_charts_in_stable_order(sao_paulo: Event) -> None:
@@ -68,6 +85,7 @@ def test_sources_merge_facts_and_charts_in_stable_order(sao_paulo: Event) -> Non
                 spec_path="charts/a.json",
                 preset=ChartPreset.X,
                 sources=(Source.FIA,),
+                provenance=PROVENANCE,
             ),
         ),
     )
@@ -113,6 +131,7 @@ def test_chart_path_stays_inside_draft(path: str) -> None:
             spec_path="charts/a.json",
             preset=ChartPreset.X,
             sources=(Source.FASTF1,),
+            provenance=PROVENANCE,
         )
 
 
@@ -123,4 +142,28 @@ def test_chart_spec_path_must_stay_inside_the_draft() -> None:
             spec_path="../a.json",
             preset=ChartPreset.X,
             sources=(Source.FASTF1,),
+            provenance=PROVENANCE,
         )
+
+
+def test_fact_requires_provenance() -> None:
+    with pytest.raises(ValidationError):
+        Fact(
+            key="x",
+            value=1,
+            display="1",
+            context="contexto",
+            source=Source.FASTF1,
+        )  # type: ignore[call-arg]
+
+
+def test_provenance_rejects_malformed_calculation_key() -> None:
+    with pytest.raises(ValidationError):
+        Provenance(calculation="pace gap", inputs=PROVENANCE.inputs)
+
+
+def test_provenance_round_trips_table_refs() -> None:
+    restored = Provenance.model_validate_json(PROVENANCE.model_dump_json())
+
+    assert restored == PROVENANCE
+    assert isinstance(restored.inputs[0], SessionTableRef)

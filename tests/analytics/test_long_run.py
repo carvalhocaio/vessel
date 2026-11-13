@@ -3,17 +3,19 @@ from collections.abc import Sequence
 import pandas as pd
 import pytest
 
+from tests.factories import facts_for
 from vessel.analytics.long_run import (
+    LONG_RUN_FACTS,
     MIN_LONG_RUN_LAPS,
-    NoLongRunError,
     degradation,
-    long_run_facts,
     long_run_laps,
+    long_run_params,
     long_runs,
     team_ranking,
 )
+from vessel.analytics.registry import CalcInputs
 from vessel.curation import DRIVER_DTYPES, LAP_DTYPES, SessionTables, conform
-from vessel.domain import Fact, Source
+from vessel.domain import Fact
 
 BASE = 90.0
 
@@ -67,8 +69,9 @@ def drivers_of(*rows: tuple[str, str, str]) -> pd.DataFrame:
     return conform(frame, DRIVER_DTYPES)
 
 
-def facts_by_key(runs: pd.DataFrame) -> dict[str, Fact]:
-    return {fact.key: fact for fact in long_run_facts(runs, Source.FASTF1)}
+def facts_by_key(laps: pd.DataFrame, drivers: pd.DataFrame) -> dict[str, Fact]:
+    inputs = CalcInputs(session_tables=SessionTables(laps=laps, drivers=drivers))
+    return facts_for(LONG_RUN_FACTS, inputs, long_run_params())
 
 
 def test_detects_long_runs_in_recorded_fp2(fp2_2026_20: SessionTables) -> None:
@@ -174,7 +177,7 @@ def test_pace_gap_compares_same_compound() -> None:
         ("RUS", "Mercedes", "British"),
     )
 
-    fact = facts_by_key(long_runs(laps, drivers))["top_teams_pace_gap"]
+    fact = facts_by_key(laps, drivers)["top_teams_pace_gap"]
 
     assert fact.value == pytest.approx(0.3)
     assert "Mercedes" in fact.context
@@ -190,7 +193,7 @@ def test_compound_mismatch_does_not_compare_pace() -> None:
         ("NOR", "McLaren", "British"), ("LEC", "Ferrari", "Monegasque")
     )
 
-    facts = facts_by_key(long_runs(laps, drivers))
+    facts = facts_by_key(laps, drivers)
 
     assert "top_teams_pace_gap" not in facts
     mismatch = facts["top_teams_compound_mismatch"]
@@ -199,7 +202,7 @@ def test_compound_mismatch_does_not_compare_pace() -> None:
 
 
 def test_facts_from_recorded_fp2(fp2_2026_20: SessionTables) -> None:
-    facts = facts_by_key(long_runs(fp2_2026_20.laps, fp2_2026_20.drivers))
+    facts = facts_by_key(fp2_2026_20.laps, fp2_2026_20.drivers)
 
     assert set(facts) == {
         "top_teams_pace_gap",
@@ -219,16 +222,15 @@ def test_facts_from_recorded_fp2(fp2_2026_20: SessionTables) -> None:
 def test_brazilian_rank_is_omitted_without_brazilian_long_run(
     sprint_2026_17: SessionTables,
 ) -> None:
-    facts = facts_by_key(long_runs(sprint_2026_17.laps, sprint_2026_17.drivers))
+    facts = facts_by_key(sprint_2026_17.laps, sprint_2026_17.drivers)
 
     assert "best_brazilian_rank" not in facts
     assert "top_teams_pace_gap" in facts
 
 
-def test_no_long_run_raises() -> None:
+def test_no_long_run_yields_no_facts() -> None:
     laps = laps_of(stint_laps("NOR", [BASE] * 3))
 
-    runs = long_runs(laps, drivers_of(("NOR", "McLaren", "British")))
+    facts = facts_by_key(laps, drivers_of(("NOR", "McLaren", "British")))
 
-    with pytest.raises(NoLongRunError):
-        long_run_facts(runs, Source.FASTF1)
+    assert facts == {}

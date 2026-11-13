@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from vessel.analytics.registry import CalcInputs, Params, compute_facts
 from vessel.curation import (
     HISTORY_DTYPES,
     RaceTables,
@@ -10,7 +11,16 @@ from vessel.curation import (
     SessionTables,
     conform,
 )
-from vessel.domain import Event, EventFormat, Session, SessionKind
+from vessel.domain import (
+    Event,
+    EventFormat,
+    Fact,
+    Provenance,
+    Session,
+    SessionKind,
+    SessionTableRef,
+    TableRef,
+)
 from vessel.sources.fastf1_schedule import events_from_schedule
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -139,3 +149,28 @@ class FakeHistorySource:
         self.calls += 1
         if self.error is not None:
             raise self.error
+
+
+TEST_REF = SessionTableRef(
+    season=2026, round=20, slug="20-sao-paulo", session_kind=SessionKind.RACE
+)
+
+
+def facts_for(
+    keys: tuple[str, ...], inputs: CalcInputs, params: Params | None = None
+) -> dict[str, Fact]:
+    facts = compute_facts(keys, inputs, (TEST_REF,), params or {})
+    return {fact.key: fact for fact in facts}
+
+
+TEST_PROVENANCE = Provenance(calculation="chart.test", inputs=(TEST_REF,))
+
+
+class StaticTables:
+    def __init__(self, inputs: CalcInputs) -> None:
+        self._inputs = inputs
+        self.loads = 0
+
+    def load(self, refs: tuple[TableRef, ...]) -> CalcInputs:
+        self.loads += 1
+        return self._inputs

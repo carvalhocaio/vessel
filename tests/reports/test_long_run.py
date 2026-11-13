@@ -4,13 +4,21 @@ from pathlib import Path
 
 import pytest
 
+from tests.factories import StaticTables
 from vessel.analytics.long_run import NoLongRunError
+from vessel.analytics.registry import CalcInputs
 from vessel.curation import SessionTables
 from vessel.domain import Draft, Event, Segment, SessionKind, Source
+from vessel.reports.drafts import Verifier
 from vessel.reports.long_run import FIXED_CAVEATS, build_long_run, long_run_dir
+from vessel.verify import verifier
 
 NOW = datetime(2026, 11, 13, 17, tzinfo=UTC)
 HANDLE = "1caiocarvalho"
+
+
+def verify_with(tables: SessionTables) -> Verifier:
+    return verifier(StaticTables(CalcInputs(session_tables=tables)))
 
 
 def test_long_run_writes_draft_and_chart(
@@ -25,6 +33,7 @@ def test_long_run_writes_draft_and_chart(
         directory,
         handle=HANDLE,
         now=NOW,
+        verify=verify_with(fp2_2026_20),
     )
 
     assert directory == tmp_path / "2026" / "20-sao-paulo" / "long_run"
@@ -35,6 +44,13 @@ def test_long_run_writes_draft_and_chart(
     assert saved.segment is Segment.LONG_RUN
     assert saved.sources == (Source.FASTF1,)
     assert [chart.path for chart in saved.charts] == ["charts/long_run_x.png"]
+    chart = saved.charts[0]
+    assert chart.provenance.params["session_kind"] == "fp2"
+    assert chart.provenance.params["min_laps"] == 6
+    assert all(
+        fact.provenance.params == {"min_laps": 6, "outlier_ratio": 1.07}
+        for fact in saved.facts
+    )
     assert (directory / "charts" / "long_run_x.png").is_file()
     assert saved.caveats[: len(FIXED_CAVEATS)] == FIXED_CAVEATS
     assert "Amostra pequena" in saved.caveats[-1]
@@ -51,6 +67,7 @@ def test_sprint_long_run_report(
         long_run_dir(tmp_path, singapore),
         handle=HANDLE,
         now=NOW,
+        verify=verify_with(sprint_2026_17),
     )
 
     assert draft.event.round == 17
@@ -64,5 +81,11 @@ def test_report_refuses_session_without_long_runs(
 
     with pytest.raises(NoLongRunError):
         build_long_run(
-            sao_paulo, SessionKind.PRACTICE_2, empty, tmp_path, handle=HANDLE, now=NOW
+            sao_paulo,
+            SessionKind.PRACTICE_2,
+            empty,
+            tmp_path,
+            handle=HANDLE,
+            now=NOW,
+            verify=verify_with(empty),
         )

@@ -5,8 +5,11 @@ from vessel.analytics.race import (
     finishing_order,
     highlighted_drivers,
     pit_stops,
+    positions_by_lap,
+    stint_summary,
     winner,
 )
+from vessel.analytics.registry import CalcInputs, Params, chart_calculation
 from vessel.domain import (
     Axis,
     AxisFormat,
@@ -175,3 +178,15 @@ def _position_title(results: pd.DataFrame, leader: str) -> str:
     if grid == 1:
         return f"{name} largou na pole e venceu"
     return f"{name} largou em P{grid} e venceu"
+
+
+@chart_calculation("chart.stints")
+def stints_chart(inputs: CalcInputs, params: Params) -> StintBarsSpec:
+    laps, results = inputs.race.laps, inputs.race.results
+    return stint_bars_spec(stint_summary(laps), laps, results)
+
+
+@chart_calculation("chart.positions")
+def positions_chart(inputs: CalcInputs, params: Params) -> PositionLinesSpec:
+    laps, results = inputs.race.laps, inputs.race.results
+    return position_lines_spec(positions_by_lap(laps, results), laps, results)

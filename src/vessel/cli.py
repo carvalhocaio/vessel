@@ -1,4 +1,6 @@
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -17,13 +19,28 @@ from vessel.cache.store import utc_now
 from vessel.circuits import load_circuits
 from vessel.config import Settings, get_settings
 from vessel.curation.history import CuratedHistoryStore
+from vessel.curation.schema import RaceTables
 from vessel.curation.store import CuratedSessionStore, MissingSessionError
-from vessel.domain import CHART_SPEC, Draft, Event, EventStatus, SessionKind
+from vessel.curation.tables import CuratedTables, MissingCuratedTableError
+from vessel.domain import (
+    CHART_SPEC,
+    CircuitHistoryRef,
+    Draft,
+    Event,
+    EventStatus,
+    SessionKind,
+    SessionTableRef,
+)
 from vessel.event_status import EventStatusFile
 from vessel.formatting import compound_name, format_lap_time, format_signed
-from vessel.reports.circuit_preview import build_circuit_preview, circuit_preview_dir
+from vessel.reports.circuit_preview import (
+    PreviewInputs,
+    build_circuit_preview,
+    circuit_preview_dir,
+)
+from vessel.reports.drafts import DraftVerificationError, Verifier
 from vessel.reports.long_run import build_long_run, long_run_dir
-from vessel.reports.race_recap import build_race_recap, race_recap_dir
+from vessel.reports.race_recap import build_race_recap, race_recap_dir, race_ref
 from vessel.schedule import (
     ReconciledSchedule,
     last_finished,
@@ -35,12 +52,14 @@ from vessel.sources.fastf1_schedule import FastF1ScheduleSource
 from vessel.sources.fastf1_session import FastF1SessionSource
 from vessel.sources.jolpica import JolpicaSource
 from vessel.sources.ports import ScheduleSource, SourceUnavailableError
+from vessel.verify import verifier, verify_file
 
 FASTF1_AUTH_HINT = (
     "Sem login na F1 o FastF1 não baixa o timing; "
     "rode: uv run python -m fastf1 auth f1tv --authenticate"
 )
 
+VERIFY_TABLE = "{:<35} {:<35} {:<35} {}"
 RUN_TABLE = "{driver:<4} {team:<17} {compound:<14} {laps:>6} {median:>9} {deg:>10}"
 
 
@@ -188,7 +207,15 @@ def race(
         typer.echo(f"{exc}. {FASTF1_AUTH_HINT}", err=True)
         raise typer.Exit(code=1) from exc
     draft_dir = race_recap_dir(settings.out_dir, event)
-    draft = build_race_recap(event, tables, draft_dir, settings.handle, now)
+    with _rejections():
+        draft = build_race_recap(
+            event,
+            tables,
+            draft_dir,
+            handle=settings.handle,
+            now=now,
+            verify=build_verifier(settings),
+        )
     _echo_draft(event, draft_dir, draft)
 
 
@@ -228,9 +255,16 @@ def long_run(
     directory = long_run_dir(settings.out_dir, event)
     try:
         tables = build_session_store(settings).session(event, kind)
-        draft = build_long_run(
-            event, kind, tables, directory, handle=settings.handle, now=now
-        )
+        with _rejections():
+            draft = build_long_run(
+                event,
+                kind,
+                tables,
+                directory,
+                handle=settings.handle,
+                now=now,
+                verify=build_verifier(settings),
+            )
     except SourceUnavailableError as exc:
         typer.echo(f"{exc}. {FASTF1_AUTH_HINT}", err=True)
         raise typer.Exit(code=1) from exc
@@ -291,40 +325,79 @@ def grid(
         event, settings.circuits_path
     )
     history_store = build_history_store(settings)
-    history = history_store.circuit(circuit, event.season, HISTORY_EDITIONS)
-    season_tables = history_store.season(events, now)
-    directory = circuit_preview_dir(settings.out_dir, event)
-    preview = build_circuit_preview(
-        event,
-        events,
-        history=history,
-        season=season_tables,
-        team_colors=_team_colors(settings, events, now),
-        directory=directory,
-        handle=settings.handle,
-        now=now,
+    data = PreviewInputs(
+        circuit=CircuitHistoryRef(
+            circuit_id=circuit, before_season=event.season, editions=HISTORY_EDITIONS
+        ),
+        history=history_store.circuit(circuit, event.season, HISTORY_EDITIONS),
+        season=history_store.season(events, now),
+        last_race=_last_race(settings, events, now),
     )
+    directory = circuit_preview_dir(settings.out_dir, event)
+    with _rejections():
+        preview = build_circuit_preview(
+            event,
+            events,
+            data,
+            directory,
+            handle=settings.handle,
+            now=now,
+            verify=build_verifier(settings),
+        )
     _echo_championship(preview.math)
     _echo_draft(event, directory, preview.draft)
 
 
-def _team_colors(
+def _last_race(
     settings: Settings, events: tuple[Event, ...], now: datetime
-) -> dict[str, str]:
+) -> tuple[SessionTableRef, RaceTables] | None:
     last = last_finished_race(events, now)
     if last is None:
-        return {}
+        return None
     try:
         tables = build_session_store(settings).race(last)
     except (SourceUnavailableError, MissingSessionError):
-        return {}
-    return {
-        str(driver): str(color)
-        for driver, color in zip(
-            tables.results["driver"], tables.results["team_color"], strict=True
+        return None
+    return race_ref(last), tables
+
+
+def build_verifier(settings: Settings) -> Verifier:
+    return verifier(CuratedTables(settings.curated_dir))
+
+
+@contextmanager
+def _rejections() -> Iterator[None]:
+    try:
+        yield
+    except DraftVerificationError as exc:
+        typer.echo(f"Draft rejeitado pela verificação: {exc.path}", err=True)
+        for failure in exc.failures:
+            typer.echo(f"  ✗ {failure}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def verify(
+    path: Annotated[Path, typer.Argument(help="Path to a draft.json.")],
+) -> None:
+    settings = get_settings()
+    try:
+        report = verify_file(path, CuratedTables(settings.curated_dir))
+    except (MissingCuratedTableError, FileNotFoundError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(VERIFY_TABLE.format("item", "salvo", "recalculado", ""))
+    for check in report.checks:
+        mark = "ok" if check.ok else "ERRO"
+        typer.echo(
+            VERIFY_TABLE.format(
+                check.item[:34], check.saved[:34], check.recomputed[:34], mark
+            )
         )
-        if pd.notna(color)
-    }
+    if not report.ok:
+        typer.echo(f"{len(report.failures)} divergência(s).", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"{len(report.checks)} itens conferidos, nenhuma divergência.")
 
 
 def _echo_championship(math: ChampionshipMath | None) -> None:

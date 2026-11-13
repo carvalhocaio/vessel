@@ -331,3 +331,48 @@ def test_grid_for_circuit_without_history(grid_env: FakeHistorySource) -> None:
 
     assert result.exit_code == 0, result.output
     assert "circuit_first_race: Estreia em Madrid" in result.stdout
+
+
+def race_draft_path(tmp_path: Path) -> Path:
+    return tmp_path / "out" / "2026" / "20-sao-paulo" / "race_recap" / "draft.json"
+
+
+def test_verify_passes_on_generated_draft(
+    race_env: FakeSessionSource, tmp_path: Path
+) -> None:
+    runner.invoke(app, ["race", "--round", "20"])
+
+    result = runner.invoke(app, ["verify", str(race_draft_path(tmp_path))])
+
+    assert result.exit_code == 0, result.output
+    assert "biggest_gain" in result.stdout
+    assert "8 itens conferidos, nenhuma divergência." in result.stdout
+
+
+def test_verify_fails_on_tampered_draft(
+    race_env: FakeSessionSource, tmp_path: Path
+) -> None:
+    runner.invoke(app, ["race", "--round", "20"])
+    path = race_draft_path(tmp_path)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["facts"][0]["display"] = "+99 posições"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    result = runner.invoke(app, ["verify", str(path)])
+
+    assert result.exit_code == 1
+    assert "ERRO" in result.stdout
+    assert "1 divergência(s)." in result.output
+
+
+def test_verify_explains_missing_curated_tables(
+    race_env: FakeSessionSource, tmp_path: Path
+) -> None:
+    runner.invoke(app, ["race", "--round", "20"])
+    for parquet in (tmp_path / "curated").rglob("*.parquet"):
+        parquet.unlink()
+
+    result = runner.invoke(app, ["verify", str(race_draft_path(tmp_path))])
+
+    assert result.exit_code == 1
+    assert "uv run vessel race --season 2026 --round 20" in result.output

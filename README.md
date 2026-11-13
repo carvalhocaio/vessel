@@ -111,6 +111,19 @@ Each segment produces a `draft.json` that the curator agent turns into a post. F
 uv run vessel schema --output draft.schema.json
 ```
 
+## Provenance and verification
+
+No number is born in the curator agent. Every fact and every chart in a `draft.json` carries a `provenance`: the calculation key (`race.biggest_gain`, `long_run.pace_gap_top_teams`, `chart.positions`…), the curated tables it read (season, round, session kind, circuit history window, season results) and the parameters used (minimum laps, editions window, the remaining rounds and their status at generation time). Calculations live in a registry (`vessel/analytics/registry.py`); a duplicated or unknown key is an error.
+
+Flow: **generate → verify → agent**.
+
+```fish
+uv run vessel race --season 2026 --round 20          # generates and verifies before publishing
+uv run vessel verify data/out/2026/20-sao-paulo/race_recap/draft.json
+```
+
+`vessel verify` reloads the curated parquet named in each provenance (no network), recomputes every fact and chart spec, and compares them: exact for integers and text, 1e-9 for floats, plus the pt-BR `display`. It prints a table (item, saved, recomputed, ok/ERRO) and exits non-zero on any divergence; a missing table names the command that produces it. Reports run the same check before publishing: a divergent draft becomes `draft.rejected.json` and `draft.json` is removed, so the agent only ever reads verified drafts.
+
 ## Chart contract
 
 Every chart is described by a `ChartSpec` (JSON) before it is drawn: the analysis decides *what* to show, renderers decide *how*. Each chart in a draft ships as `charts/<name>_<preset>.png` (matplotlib, for social posts) and `charts/<name>.json` (the spec, for the site), and `ChartRef.spec_path` points to the JSON.

@@ -1,17 +1,22 @@
 import pandas as pd
 
-from vessel.analytics.circuit_history import circuit_facts, editions, winners
-from vessel.analytics.form import current_grid
+from tests.factories import facts_for
+from vessel.analytics.circuit_history import (
+    CIRCUIT_FACTS,
+    circuit_params,
+    editions,
+    winners,
+)
+from vessel.analytics.registry import CalcInputs
 from vessel.curation import SeasonTables
-from vessel.domain import Fact, Source
+from vessel.domain import Fact
 
 
 def facts_by_key(
     history: pd.DataFrame, season: SeasonTables, location: str
 ) -> dict[str, Fact]:
-    grid = current_grid(season.results)
-    facts = circuit_facts(history, grid, location, Source.JOLPICA)
-    return {fact.key: fact for fact in facts}
+    inputs = CalcInputs(history_table=history, season_tables=season)
+    return facts_for(CIRCUIT_FACTS, inputs, circuit_params(location, 10))
 
 
 def test_interlagos_window_skips_seasons_without_a_race(
