@@ -24,6 +24,16 @@ uv run vessel doctor
 
 Fill in the secret iCal address of the F1 Google Calendar in `.env`.
 
+## Weekend agenda
+
+The FastF1 schedule gives rounds, formats and sessions; the official F1 calendar (secret iCal address in `VESSEL_ICAL_F1`) confirms or corrects session times and wins when they differ.
+
+```fish
+uv run vessel agenda                 # next GP, in America/Cuiaba time
+uv run vessel agenda --round 22      # a specific round
+uv run vessel agenda --json          # for the curator agent
+```
+
 ## Draft contract
 
 Each segment produces a `draft.json` that the curator agent turns into a post. Facts carry value, pt-BR display text, context and source, so the agent writes words, never numbers.

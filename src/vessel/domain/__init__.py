@@ -7,10 +7,18 @@ from vessel.domain.draft import (
     Segment,
     Source,
 )
-from vessel.domain.event import Event, EventFormat, EventRef, Session, SessionKind
+from vessel.domain.event import (
+    CalendarEntry,
+    Event,
+    EventFormat,
+    EventRef,
+    Session,
+    SessionKind,
+)
 
 __all__ = [
     "SCHEMA_VERSION",
+    "CalendarEntry",
     "ChartPreset",
     "ChartRef",
     "Draft",

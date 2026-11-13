@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 from typing import Self
 
@@ -33,6 +34,15 @@ class Session(BaseModel):
         if self.ends_at <= self.starts_at:
             raise ValueError("a session must end after it starts")
         return self
+
+
+class CalendarEntry(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    country: str
+    kind: SessionKind
+    starts_at: AwareDatetime
+    ends_at: AwareDatetime
 
 
 class EventRef(BaseModel):
@@ -71,6 +81,10 @@ class Event(BaseModel):
     @property
     def slug(self) -> str:
         return f"{self.round:02d}-{slugify(self.location)}"
+
+    @property
+    def ends_at(self) -> datetime | None:
+        return self.sessions[-1].ends_at if self.sessions else None
 
     @property
     def long_run_session(self) -> SessionKind:
