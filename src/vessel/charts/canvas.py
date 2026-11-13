@@ -6,7 +6,7 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 
 from vessel.charts.theme import DARK, Theme
-from vessel.domain import ChartPreset, ChartRef, Source
+from vessel.domain import ChartPreset, Source
 from vessel.formatting import format_decimal
 
 DPI = 200
@@ -70,7 +70,7 @@ class Chart:
 
     def save(
         self, draft_dir: Path, name: str, sources: Iterable[Source], handle: str
-    ) -> ChartRef:
+    ) -> str:
         if not _CHART_NAME.fullmatch(name):
             raise ValueError(f"invalid chart name: {name!r}")
         used = tuple(source for source in Source if source in set(sources))
@@ -85,7 +85,7 @@ class Chart:
         path = draft_dir / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         self.figure.savefig(path, dpi=DPI, facecolor=self.theme.surface)
-        return ChartRef(path=relative, preset=self.preset, sources=used)
+        return relative
 
     def _layout(self) -> None:
         self.figure.subplots_adjust(

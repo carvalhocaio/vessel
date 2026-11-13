@@ -43,6 +43,7 @@ def test_round_trips_through_json(sao_paulo: Event) -> None:
         charts=(
             ChartRef(
                 path="charts/long_run_x.png",
+                spec_path="charts/long_run.json",
                 preset=ChartPreset.X,
                 sources=(Source.FASTF1,),
             ),
@@ -53,7 +54,7 @@ def test_round_trips_through_json(sao_paulo: Event) -> None:
 
 
 def test_schema_version_is_pinned(sao_paulo: Event) -> None:
-    assert _draft(sao_paulo).schema_version == 1
+    assert _draft(sao_paulo).schema_version == 2
 
 
 def test_sources_merge_facts_and_charts_in_stable_order(sao_paulo: Event) -> None:
@@ -62,7 +63,12 @@ def test_sources_merge_facts_and_charts_in_stable_order(sao_paulo: Event) -> Non
         _fact("pole_to_win_rate", Source.JOLPICA),
         _fact("pace_gap_top2", Source.FASTF1),
         charts=(
-            ChartRef(path="charts/a.png", preset=ChartPreset.X, sources=(Source.FIA,)),
+            ChartRef(
+                path="charts/a.png",
+                spec_path="charts/a.json",
+                preset=ChartPreset.X,
+                sources=(Source.FIA,),
+            ),
         ),
     )
 
@@ -102,4 +108,19 @@ def test_fact_key_is_snake_case(key: str) -> None:
 )
 def test_chart_path_stays_inside_draft(path: str) -> None:
     with pytest.raises(ValidationError, match="relative file"):
-        ChartRef(path=path, preset=ChartPreset.X, sources=(Source.FASTF1,))
+        ChartRef(
+            path=path,
+            spec_path="charts/a.json",
+            preset=ChartPreset.X,
+            sources=(Source.FASTF1,),
+        )
+
+
+def test_chart_spec_path_must_stay_inside_the_draft() -> None:
+    with pytest.raises(ValidationError):
+        ChartRef(
+            path="charts/a.png",
+            spec_path="../a.json",
+            preset=ChartPreset.X,
+            sources=(Source.FASTF1,),
+        )

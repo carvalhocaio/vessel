@@ -111,6 +111,17 @@ Each segment produces a `draft.json` that the curator agent turns into a post. F
 uv run vessel schema --output draft.schema.json
 ```
 
+## Chart contract
+
+Every chart is described by a `ChartSpec` (JSON) before it is drawn: the analysis decides *what* to show, renderers decide *how*. Each chart in a draft ships as `charts/<name>_<preset>.png` (matplotlib, for social posts) and `charts/<name>.json` (the spec, for the site), and `ChartRef.spec_path` points to the JSON.
+
+Specs are a union discriminated by `kind` — `stint_bars`, `position_lines`, `ranged_dots`, `grid_timeline`, `ranked_dots` — with title, subtitle, sources, axes (label, unit, format, inverted, domain) and series (id, label, color, highlighted, points). Texts and labels come ready in pt-BR, and raw values ride along for hover.
+
+```fish
+uv run vessel schema --model chart --output chart.schema.json   # source for the site's TypeScript types
+uv run vessel schema --model draft --output draft.schema.json
+```
+
 ## Development
 
 ```fish

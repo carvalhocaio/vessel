@@ -18,7 +18,7 @@ from vessel.circuits import load_circuits
 from vessel.config import Settings, get_settings
 from vessel.curation.history import CuratedHistoryStore
 from vessel.curation.store import CuratedSessionStore, MissingSessionError
-from vessel.domain import Draft, Event, EventStatus, SessionKind
+from vessel.domain import CHART_SPEC, Draft, Event, EventStatus, SessionKind
 from vessel.event_status import EventStatusFile
 from vessel.formatting import compound_name, format_lap_time, format_signed
 from vessel.reports.circuit_preview import build_circuit_preview, circuit_preview_dir
@@ -42,6 +42,11 @@ FASTF1_AUTH_HINT = (
 )
 
 RUN_TABLE = "{driver:<4} {team:<17} {compound:<14} {laps:>6} {median:>9} {deg:>10}"
+
+
+class SchemaModel(StrEnum):
+    DRAFT = "draft"
+    CHART = "chart"
 
 
 class LongRunSession(StrEnum):
@@ -72,16 +77,24 @@ def doctor() -> None:
 
 @app.command()
 def schema(
+    model: Annotated[
+        SchemaModel, typer.Option(help="Contract to export.")
+    ] = SchemaModel.DRAFT,
     output: Annotated[
         Path | None, typer.Option(help="Write the JSON Schema to a file.")
     ] = None,
 ) -> None:
-    document = json.dumps(Draft.model_json_schema(), indent=2, ensure_ascii=False)
+    contract = (
+        Draft.model_json_schema()
+        if model is SchemaModel.DRAFT
+        else CHART_SPEC.json_schema()
+    )
+    document = json.dumps(contract, indent=2, ensure_ascii=False)
     if output is None:
         typer.echo(document)
         return
     output.write_text(document + "\n", encoding="utf-8")
-    typer.echo(f"draft schema written to {output}")
+    typer.echo(f"{model.value} schema written to {output}")
 
 
 def build_schedule(settings: Settings) -> ScheduleSource:

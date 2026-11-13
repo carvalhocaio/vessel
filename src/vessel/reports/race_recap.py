@@ -2,13 +2,12 @@ from datetime import datetime
 from pathlib import Path
 
 from vessel.analytics.race import positions_by_lap, race_facts, stint_summary
-from vessel.charts.race import position_chart, stint_chart
+from vessel.charts.output import save_chart
+from vessel.charts.specs.race import position_lines_spec, stint_bars_spec
 from vessel.curation.schema import RaceTables
 from vessel.domain import Draft, Event, Segment, Source
 from vessel.reports.drafts import draft_dir, write_draft
 
-TIMING_SOURCES = (Source.FASTF1,)
-POSITION_SOURCES = (Source.FASTF1, Source.JOLPICA)
 CAVEATS = (
     "Ritmo: mediana das voltas limpas (sem SC/VSC/bandeira vermelha, "
     "sem volta de entrada ou saída de box, sem a volta 1).",
@@ -28,11 +27,17 @@ def build_race_recap(
     directory.mkdir(parents=True, exist_ok=True)
     facts = race_facts(laps, results, Source.FASTF1)
     charts = (
-        stint_chart(stint_summary(laps), laps, results).save(
-            directory, "stints", TIMING_SOURCES, handle
+        save_chart(
+            stint_bars_spec(stint_summary(laps), laps, results),
+            directory,
+            "stints",
+            handle,
         ),
-        position_chart(positions_by_lap(laps, results), laps, results).save(
-            directory, "positions", POSITION_SOURCES, handle
+        save_chart(
+            position_lines_spec(positions_by_lap(laps, results), laps, results),
+            directory,
+            "positions",
+            handle,
         ),
     )
     draft = Draft(

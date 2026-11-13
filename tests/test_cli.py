@@ -38,6 +38,20 @@ def test_schema_prints_draft_contract() -> None:
     assert "facts" in schema["required"]
 
 
+def test_schema_exports_chart_spec_contract() -> None:
+    result = runner.invoke(app, ["schema", "--model", "chart"])
+
+    assert result.exit_code == 0, result.output
+    schema = json.loads(result.stdout)
+    assert set(schema["discriminator"]["mapping"]) == {
+        "stint_bars",
+        "position_lines",
+        "ranged_dots",
+        "grid_timeline",
+        "ranked_dots",
+    }
+
+
 def test_schema_writes_to_file(tmp_path: Path) -> None:
     target = tmp_path / "draft.schema.json"
 

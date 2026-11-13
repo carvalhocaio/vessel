@@ -14,13 +14,15 @@ from vessel.analytics.form import (
     form_facts,
     recent_form,
 )
-from vessel.charts.circuit_preview import form_chart, winners_chart
+from vessel.charts.output import save_chart
+from vessel.charts.specs.circuit_preview import (
+    grid_timeline_spec,
+    ranked_dots_spec,
+)
 from vessel.curation.schema import SeasonTables
 from vessel.domain import ChartRef, Draft, Event, Segment, Source
 from vessel.reports.drafts import draft_dir, write_draft
 
-HISTORY_SOURCES = (Source.JOLPICA,)
-FORM_SOURCES = (Source.FASTF1, Source.JOLPICA)
 FIXED_CAVEATS = (
     "O regulamento técnico novo de 2026 reduz o peso do histórico do circuito.",
     "Média de chegada usa a posição oficial: abandonos entram na ordem de "
@@ -62,14 +64,20 @@ def build_circuit_preview(
     charts: list[ChartRef] = []
     if not history.empty:
         charts.append(
-            winners_chart(history, event.location).save(
-                directory, "winners", HISTORY_SOURCES, handle
+            save_chart(
+                grid_timeline_spec(history, event.location),
+                directory,
+                "winners",
+                handle,
             )
         )
     if not form.empty and not season.standings.empty:
         charts.append(
-            form_chart(form, season.standings, team_colors).save(
-                directory, "form", FORM_SOURCES, handle
+            save_chart(
+                ranked_dots_spec(form, season.standings, team_colors),
+                directory,
+                "form",
+                handle,
             )
         )
     draft = Draft(

@@ -13,7 +13,7 @@ from pydantic import (
 
 from vessel.domain.event import EventRef
 
-SCHEMA_VERSION: Literal[1] = 1
+SCHEMA_VERSION: Literal[2] = 2
 
 
 class Source(StrEnum):
@@ -51,10 +51,11 @@ class ChartRef(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     path: str
+    spec_path: str
     preset: ChartPreset
     sources: tuple[Source, ...] = Field(min_length=1)
 
-    @field_validator("path")
+    @field_validator("path", "spec_path")
     @classmethod
     def _relative_inside_draft(cls, value: str) -> str:
         path = PurePosixPath(value)
@@ -66,7 +67,7 @@ class ChartRef(BaseModel):
 class Draft(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = SCHEMA_VERSION
+    schema_version: Literal[2] = SCHEMA_VERSION
     segment: Segment
     event: EventRef
     facts: tuple[Fact, ...] = Field(min_length=1)

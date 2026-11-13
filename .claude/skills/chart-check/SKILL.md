@@ -8,7 +8,9 @@ paths:
 
 ## Build
 
-- Always `vessel.charts.Chart(title, subtitle, preset, theme)`; never `pyplot`.
+- Two steps: a pure builder in `charts/specs/` turns analytics DataFrames into a `ChartSpec` (`domain/chart_spec.py`), and a renderer in `charts/render/` draws that spec. `charts/output.save_chart` writes the PNG and the JSON. A new chart kind needs the spec model, a builder, a renderer and a branch in `render()`.
+- Builders own every text (title with the conclusion, pt-BR labels) and the raw values; renderers own every visual choice (sizes, halos, padding, fallbacks). The site renders the same JSON, so nothing visual-only goes into the spec and nothing data-only stays in the renderer.
+- Renderers always use `vessel.charts.Chart(title, subtitle, preset, theme)`; never `pyplot`.
 - Title states the conclusion ("Verstappen ganhou 19 posições"); subtitle says what is plotted and the rule used.
 - Identity never by color alone: with more than one series, label directly (driver code at the end of the line or next to the bar). Text labels on dark backgrounds get a surface-colored halo (`patheffects.withStroke`).
 - One y axis; recessive grid; no extra spines. Inverted axis when lower is better (positions).

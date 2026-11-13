@@ -29,4 +29,9 @@ def test_race_recap_writes_draft_and_charts(
         "charts/positions_x.png",
     ]
     assert all((draft_dir / chart.path).is_file() for chart in saved.charts)
+    assert [chart.spec_path for chart in saved.charts] == [
+        "charts/stints.json",
+        "charts/positions.json",
+    ]
+    assert all((draft_dir / chart.spec_path).is_file() for chart in saved.charts)
     assert saved.sources == (Source.FASTF1, Source.JOLPICA)
