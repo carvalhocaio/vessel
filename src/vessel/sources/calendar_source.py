@@ -48,7 +48,9 @@ class ICalCalendarSource:
 
     def entries(self) -> tuple[CalendarEntry, ...]:
         ics = self._cache.fetch(
-            CACHE_KEY, Ttl(self._max_age), lambda: self._get(self._url),
+            CACHE_KEY,
+            Ttl(self._max_age),
+            lambda: self._get(self._url),
         )
         return parse_calendar(ics)
 
