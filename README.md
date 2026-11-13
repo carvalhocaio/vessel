@@ -24,6 +24,14 @@ uv run vessel doctor
 
 Fill in the secret iCal address of the F1 Google Calendar in `.env`.
 
+## Draft contract
+
+Each segment produces a `draft.json` that the curator agent turns into a post. Facts carry value, pt-BR display text, context and source, so the agent writes words, never numbers.
+
+```fish
+uv run vessel schema --output draft.schema.json
+```
+
 ## Development
 
 ```fish

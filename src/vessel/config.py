@@ -33,6 +33,14 @@ class Settings(BaseSettings):
         return self.data_dir / "cache"
 
     @property
+    def http_cache_dir(self) -> Path:
+        return self.cache_dir / "http"
+
+    @property
+    def fastf1_cache_dir(self) -> Path:
+        return self.cache_dir / "fastf1"
+
+    @property
     def curated_dir(self) -> Path:
         return self.data_dir / "curated"
 
