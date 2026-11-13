@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from vessel.domain import CalendarEntry, Event, EventRef, Session, SessionKind
+from vessel.event_status import EventStatusFile
 from vessel.sources.ports import CalendarSource, ScheduleSource
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,11 @@ def reconcile(
 
 
 def next_event(events: tuple[Event, ...], now: datetime) -> Event | None:
-    upcoming = (event for event in events if event.ends_at and event.ends_at > now)
+    upcoming = (
+        event
+        for event in events
+        if not event.is_cancelled and event.ends_at and event.ends_at > now
+    )
     return min(upcoming, key=lambda event: event.round, default=None)
 
 
@@ -71,7 +76,9 @@ def last_finished(
     finished = (
         event
         for event in events
-        if (session := event.session(session_of(event))) and session.ends_at <= now
+        if not event.is_cancelled
+        and (session := event.session(session_of(event)))
+        and session.ends_at <= now
     )
     return max(finished, key=lambda event: event.round, default=None)
 
@@ -81,11 +88,21 @@ def last_finished_race(events: tuple[Event, ...], now: datetime) -> Event | None
 
 
 class ReconciledSchedule:
-    def __init__(self, base: ScheduleSource, calendar: CalendarSource | None) -> None:
+    def __init__(
+        self,
+        base: ScheduleSource,
+        calendar: CalendarSource | None,
+        status: EventStatusFile | None = None,
+    ) -> None:
         self._base = base
         self._calendar = calendar
+        self._status = status
 
     def events(self, season: int) -> tuple[Event, ...]:
+        events = self._reconciled(season)
+        return self._status.apply(events) if self._status else events
+
+    def _reconciled(self, season: int) -> tuple[Event, ...]:
         events = self._base.events(season)
         if self._calendar is None:
             return events

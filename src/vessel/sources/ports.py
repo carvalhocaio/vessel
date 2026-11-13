@@ -1,6 +1,8 @@
 from typing import Protocol
 
-from vessel.curation.schema import RaceTables, SessionTables
+import pandas as pd
+
+from vessel.curation.schema import RaceTables, SeasonTables, SessionTables
 from vessel.domain import CalendarEntry, Event, SessionKind
 
 
@@ -20,3 +22,11 @@ class SessionSource(Protocol):
     def race(self, event: Event) -> RaceTables: ...
 
     def session(self, event: Event, kind: SessionKind) -> SessionTables: ...
+
+
+class HistorySource(Protocol):
+    def circuit_results(
+        self, circuit_id: str, before_season: int, editions: int
+    ) -> pd.DataFrame: ...
+
+    def season(self, season: int) -> SeasonTables: ...

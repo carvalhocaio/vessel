@@ -1,0 +1,10 @@
+[2026.21]
+status = "cancelled"
+note = "evento cancelado pela F1"
+source = "https://www.formula1.com/en/latest"
+updated_on = 2026-11-10
+
+[2026.22]
+status = "at_risk"
+note = "conflitos na região"
+updated_on = 2026-11-13

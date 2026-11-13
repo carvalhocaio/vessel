@@ -2,17 +2,21 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
-from tests.factories import FakeSessionSource
+from tests.factories import FIXTURES, FakeHistorySource, FakeSessionSource
 from vessel import __version__, cli
 from vessel.cache import FileCache
 from vessel.cli import app
 from vessel.config import Settings
-from vessel.curation import RaceTables, SessionTables
+from vessel.curation import RaceTables, SeasonTables, SessionTables
+from vessel.curation.history import CuratedHistoryStore
 from vessel.curation.store import CuratedSessionStore
 from vessel.domain import Event, SessionKind
+from vessel.event_status import EventStatusFile
+from vessel.schedule import ReconciledSchedule
 from vessel.sources.ports import SourceUnavailableError
 
 runner = CliRunner()
@@ -214,3 +218,102 @@ def test_long_run_reports_sessions_without_long_runs(
 
     assert result.exit_code == 1
     assert "Nenhum long run válido" in result.output
+
+
+@pytest.fixture
+def status_agenda(
+    monkeypatch: pytest.MonkeyPatch, schedule_2026: tuple[Event, ...]
+) -> None:
+    schedule = ReconciledSchedule(
+        FakeSchedule(schedule_2026),
+        None,
+        EventStatusFile(FIXTURES / "event_status.toml"),
+    )
+    monkeypatch.setattr(cli, "build_schedule", lambda _: schedule)
+    monkeypatch.setattr(cli, "utc_now", lambda: datetime(2026, 11, 13, 17, tzinfo=UTC))
+
+
+@pytest.mark.usefixtures("status_agenda")
+def test_agenda_json_includes_status() -> None:
+    result = runner.invoke(app, ["agenda", "--round", "22", "--json"])
+
+    assert result.exit_code == 0, result.output
+    event = json.loads(result.stdout)
+    assert event["status"] == "at_risk"
+    assert event["notice"]["note"] == "conflitos na região"
+
+
+@pytest.mark.usefixtures("status_agenda")
+def test_agenda_skips_cancelled_next_gp() -> None:
+    result = runner.invoke(app, ["agenda"])
+
+    assert result.exit_code == 0, result.output
+    assert "Qatar Grand Prix · rodada 22" in result.stdout
+    assert "⚠ Em risco: conflitos na região (atualizado em 13/11)" in result.stdout
+
+
+@pytest.mark.usefixtures("status_agenda")
+def test_status_lists_flagged_gps() -> None:
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines[0].startswith("rodada 21 · Las Vegas Grand Prix · ⚠ Cancelado")
+    assert lines[1] == (
+        "rodada 22 · Qatar Grand Prix · ⚠ Em risco: conflitos na região "
+        "(atualizado em 13/11)"
+    )
+
+
+@pytest.mark.usefixtures("frozen_agenda")
+def test_status_when_everything_is_confirmed() -> None:
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "Todos os GPs de 2026 estão confirmados."
+
+
+@pytest.fixture
+def grid_env(
+    race_env: FakeSessionSource,
+    monkeypatch: pytest.MonkeyPatch,
+    vegas_history: pd.DataFrame,
+    madring_history: pd.DataFrame,
+    season_2026: SeasonTables,
+) -> FakeHistorySource:
+    source = FakeHistorySource(
+        {"vegas": vegas_history, "madring": madring_history}, season_2026
+    )
+    monkeypatch.setattr(
+        cli,
+        "build_history_store",
+        lambda s: CuratedHistoryStore(FileCache(s.curated_dir), source),
+    )
+    return source
+
+
+def test_grid_for_las_vegas(grid_env: FakeHistorySource, tmp_path: Path) -> None:
+    result = runner.invoke(app, ["grid", "--season", "2026", "--round", "21"])
+
+    assert result.exit_code == 0, result.output
+    assert "Campeonato: Antonelli 390 x Verstappen 279 (diferença 111)" in result.stdout
+    assert "Título decidido aqui? já decidido" in result.stdout
+    assert "circuit_last_winner: Verstappen (2025)" in result.stdout
+    draft = (
+        tmp_path / "out" / "2026" / "21-las-vegas" / "circuit_preview" / "draft.json"
+    )
+    assert json.loads(draft.read_text(encoding="utf-8"))["segment"] == "circuit_preview"
+
+
+def test_grid_defaults_to_next_gp(grid_env: FakeHistorySource) -> None:
+    result = runner.invoke(app, ["grid"])
+
+    assert result.exit_code == 0, result.output
+    assert "Las Vegas Grand Prix · rodada 21" in result.stdout
+
+
+def test_grid_for_circuit_without_history(grid_env: FakeHistorySource) -> None:
+    result = runner.invoke(app, ["grid", "--round", "14"])
+
+    assert result.exit_code == 0, result.output
+    assert "circuit_first_race: Estreia em Madrid" in result.stdout

@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     handle: str = "1caiocarvalho"
     timezone: str = "America/Cuiaba"
     data_dir: Path = Path("data")
+    event_status_path: Path = Path("config/event_status.toml")
+    circuits_path: Path = Path("config/circuits.toml")
     calendars: CalendarFeeds = Field(default_factory=CalendarFeeds)
 
     @property

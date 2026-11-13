@@ -5,7 +5,13 @@ from datetime import timedelta
 
 import pandas as pd
 
-from vessel.cache import RESULTS_SETTLE, TIMING_SETTLE, FileCache, ParcFerme
+from vessel.cache import (
+    RESULTS_SETTLE,
+    TIMING_SETTLE,
+    FileCache,
+    Freshness,
+    ParcFerme,
+)
 from vessel.curation.schema import (
     DRIVER_DTYPES,
     LAP_DTYPES,
@@ -40,10 +46,53 @@ def session_prefix(event: Event, kind: SessionKind) -> str:
     return f"{event.season}/{event.slug}/{kind.value}"
 
 
+def fetch_frames(
+    cache: FileCache,
+    keys: Mapping[str, str],
+    freshness: Freshness,
+    schemas: Schemas,
+    load: Callable[[], Frames],
+) -> Frames:
+    fresh = {
+        name: data
+        for name, key in keys.items()
+        if (data := cache.get(key, freshness)) is not None
+    }
+    if len(fresh) == len(keys):
+        return _decode(fresh, schemas)
+    try:
+        frames = load()
+    except Exception:
+        stale = {
+            name: entry.data
+            for name, key in keys.items()
+            if (entry := cache.read(key)) is not None
+        }
+        if len(stale) < len(keys):
+            raise
+        logger.warning("serving stale curated tables for %s", ", ".join(keys.values()))
+        return _decode(stale, schemas)
+    for name, key in keys.items():
+        cache.put(key, _encode(frames[name]))
+    return frames
+
+
 class CuratedSessionStore:
     def __init__(self, cache: FileCache, source: SessionSource) -> None:
         self._cache = cache
         self._source = source
+
+    def _cached(
+        self,
+        event: Event,
+        kind: SessionKind,
+        settle: timedelta,
+        schemas: Schemas,
+        load: Callable[[], Frames],
+    ) -> Frames:
+        keys = {name: _key(event, kind, name) for name in schemas}
+        freshness = ParcFerme.after(session_or_raise(event, kind), settle)
+        return fetch_frames(self._cache, keys, freshness, schemas, load)
 
     def race(self, event: Event) -> RaceTables:
         frames = self._cached(
@@ -64,39 +113,6 @@ class CuratedSessionStore:
             lambda: _frames(self._source.session(event, kind).conformed()),
         )
         return SessionTables(laps=frames["laps"], drivers=frames["drivers"])
-
-    def _cached(
-        self,
-        event: Event,
-        kind: SessionKind,
-        settle: timedelta,
-        schemas: Schemas,
-        load: Callable[[], Frames],
-    ) -> Frames:
-        keys = {name: _key(event, kind, name) for name in schemas}
-        freshness = ParcFerme.after(session_or_raise(event, kind), settle)
-        fresh = {
-            name: data
-            for name, key in keys.items()
-            if (data := self._cache.get(key, freshness)) is not None
-        }
-        if len(fresh) == len(keys):
-            return _decode(fresh, schemas)
-        try:
-            frames = load()
-        except Exception:
-            stale = {
-                name: entry.data
-                for name, key in keys.items()
-                if (entry := self._cache.read(key)) is not None
-            }
-            if len(stale) < len(keys):
-                raise
-            logger.warning("serving stale curated %s for %s", kind.value, event.name)
-            return _decode(stale, schemas)
-        for name, key in keys.items():
-            self._cache.put(key, _encode(frames[name]))
-        return frames
 
 
 def _frames(tables: RaceTables | SessionTables) -> Frames:

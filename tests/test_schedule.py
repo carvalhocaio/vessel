@@ -1,7 +1,8 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
-from tests.factories import load_calendar_ics
-from vessel.domain import CalendarEntry, Event, SessionKind
+from tests.factories import FIXTURES, load_calendar_ics
+from vessel.domain import CalendarEntry, Event, EventNotice, EventStatus, SessionKind
+from vessel.event_status import EventStatusFile
 from vessel.schedule import (
     ReconciledSchedule,
     last_finished,
@@ -172,3 +173,51 @@ def test_last_finished_by_fixed_session(schedule_2026: tuple[Event, ...]) -> Non
 
     assert event is not None
     assert event.round == 17
+
+
+class StaticSchedule:
+    def __init__(self, events: tuple[Event, ...]) -> None:
+        self._events = events
+
+    def events(self, season: int) -> tuple[Event, ...]:
+        return self._events
+
+
+def test_reconciled_schedule_applies_status_after_calendar(
+    schedule_2026: tuple[Event, ...],
+) -> None:
+    schedule = ReconciledSchedule(
+        StaticSchedule(schedule_2026),
+        None,
+        EventStatusFile(FIXTURES / "event_status.toml"),
+    )
+
+    events = {event.round: event for event in schedule.events(2026)}
+
+    assert events[22].status is EventStatus.AT_RISK
+
+
+def test_next_event_skips_cancelled_gp(schedule_2026: tuple[Event, ...]) -> None:
+    events = EventStatusFile(FIXTURES / "event_status.toml").apply(schedule_2026)
+
+    event = next_event(events, datetime(2026, 11, 13, 17, tzinfo=UTC))
+
+    assert event is not None
+    assert event.round == QATAR
+
+
+def test_last_finished_race_skips_cancelled_gp(
+    schedule_2026: tuple[Event, ...],
+) -> None:
+    cancelled = EventNotice(
+        status=EventStatus.CANCELLED, note="cancelado", updated_on=date(2026, 11, 1)
+    )
+    events = tuple(
+        event.with_notice(cancelled) if event.round == 20 else event
+        for event in schedule_2026
+    )
+
+    event = last_finished_race(events, datetime(2026, 11, 13, 17, tzinfo=UTC))
+
+    assert event is not None
+    assert event.round == 19

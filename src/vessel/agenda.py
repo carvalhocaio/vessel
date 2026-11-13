@@ -1,6 +1,6 @@
 from zoneinfo import ZoneInfo
 
-from vessel.domain import Event, EventFormat, SessionKind
+from vessel.domain import Event, EventFormat, EventStatus, SessionKind
 
 SESSION_LABELS = {
     SessionKind.PRACTICE_1: "TL1",
@@ -17,14 +17,20 @@ FORMAT_LABELS = {
     EventFormat.SPRINT: "fim de semana sprint",
 }
 
+STATUS_LABELS = {
+    EventStatus.AT_RISK: "Em risco",
+    EventStatus.POSTPONED: "Adiado",
+    EventStatus.CANCELLED: "Cancelado",
+}
+
 WEEKDAYS = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
 
 
 def render_agenda(event: Event, tz: ZoneInfo) -> str:
-    lines = [
-        f"{event.name} · rodada {event.round} · {FORMAT_LABELS[event.format]}",
-        "",
-    ]
+    lines = [f"{event.name} · rodada {event.round} · {FORMAT_LABELS[event.format]}"]
+    if warning := status_line(event):
+        lines.append(warning)
+    lines.append("")
     for session in event.sessions:
         local = session.starts_at.astimezone(tz)
         when = f"{WEEKDAYS[local.weekday()]} {local:%d/%m %H:%M}"
@@ -41,3 +47,14 @@ def _marker(event: Event, kind: SessionKind) -> str:
     if kind is SessionKind.RACE:
         return "  ← Volta Rápida"
     return ""
+
+
+def status_line(event: Event) -> str | None:
+    notice = event.notice
+    if event.status is EventStatus.CONFIRMED or notice is None:
+        return None
+    line = (
+        f"⚠ {STATUS_LABELS[event.status]}: {notice.note} "
+        f"(atualizado em {notice.updated_on:%d/%m})"
+    )
+    return f"{line} · {notice.source}" if notice.source else line

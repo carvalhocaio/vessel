@@ -36,6 +36,35 @@ RESULT_DTYPES: dict[str, str] = {
 }
 
 
+HISTORY_DTYPES: dict[str, str] = {
+    "season": "Int16",
+    "round": "Int16",
+    "circuit_id": "string",
+    "race_name": "string",
+    "date": "string",
+    "session": "string",
+    "driver": "string",
+    "name": "string",
+    "nationality": "string",
+    "team": "string",
+    "grid": "Int16",
+    "finish": "Int16",
+    "position_text": "string",
+    "status": "string",
+    "points": "Float64",
+}
+
+STANDING_DTYPES: dict[str, str] = {
+    "driver": "string",
+    "name": "string",
+    "nationality": "string",
+    "team": "string",
+    "position": "Int16",
+    "points": "Float64",
+    "wins": "Int16",
+}
+
+
 class SchemaError(ValueError):
     pass
 
@@ -68,4 +97,16 @@ class SessionTables:
         return SessionTables(
             laps=conform(self.laps, LAP_DTYPES),
             drivers=conform(self.drivers, DRIVER_DTYPES),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SeasonTables:
+    results: pd.DataFrame
+    standings: pd.DataFrame
+
+    def conformed(self) -> "SeasonTables":
+        return SeasonTables(
+            results=conform(self.results, HISTORY_DTYPES),
+            standings=conform(self.standings, STANDING_DTYPES),
         )

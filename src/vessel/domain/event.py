@@ -1,8 +1,15 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    model_validator,
+)
 
 from vessel.formatting import slugify
 
@@ -20,6 +27,22 @@ class SessionKind(StrEnum):
 class EventFormat(StrEnum):
     CONVENTIONAL = "conventional"
     SPRINT = "sprint"
+
+
+class EventStatus(StrEnum):
+    CONFIRMED = "confirmed"
+    AT_RISK = "at_risk"
+    POSTPONED = "postponed"
+    CANCELLED = "cancelled"
+
+
+class EventNotice(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: EventStatus
+    note: str = Field(min_length=1)
+    source: HttpUrl | None = None
+    updated_on: date
 
 
 class Session(BaseModel):
@@ -63,6 +86,14 @@ class Event(BaseModel):
     country: str = Field(min_length=1)
     format: EventFormat
     sessions: tuple[Session, ...]
+    status: EventStatus = EventStatus.CONFIRMED
+    notice: EventNotice | None = None
+
+    @model_validator(mode="after")
+    def _notice_matches_status(self) -> Self:
+        if self.notice is not None and self.notice.status is not self.status:
+            raise ValueError("event status must match its notice")
+        return self
 
     @model_validator(mode="after")
     def _sessions_are_unique_and_ordered(self) -> Self:
@@ -91,6 +122,15 @@ class Event(BaseModel):
         if self.format is EventFormat.SPRINT:
             return SessionKind.SPRINT
         return SessionKind.PRACTICE_2
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self.status is EventStatus.CANCELLED
+
+    def with_notice(self, notice: EventNotice) -> "Event":
+        return Event.model_validate(
+            self.model_dump() | {"status": notice.status, "notice": notice}
+        )
 
     def session(self, kind: SessionKind) -> Session | None:
         return next((s for s in self.sessions if s.kind is kind), None)

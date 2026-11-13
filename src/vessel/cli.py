@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -7,14 +8,20 @@ import pandas as pd
 import typer
 
 from vessel import __version__
-from vessel.agenda import render_agenda
+from vessel.agenda import render_agenda, status_line
+from vessel.analytics.circuit_history import HISTORY_EDITIONS
+from vessel.analytics.form import ChampionshipMath
 from vessel.analytics.long_run import NoLongRunError, long_runs
 from vessel.cache import FileCache
 from vessel.cache.store import utc_now
+from vessel.circuits import load_circuits
 from vessel.config import Settings, get_settings
-from vessel.curation.store import CuratedSessionStore
-from vessel.domain import Draft, Event, SessionKind
+from vessel.curation.history import CuratedHistoryStore
+from vessel.curation.store import CuratedSessionStore, MissingSessionError
+from vessel.domain import Draft, Event, EventStatus, SessionKind
+from vessel.event_status import EventStatusFile
 from vessel.formatting import compound_name, format_lap_time, format_signed
+from vessel.reports.circuit_preview import build_circuit_preview, circuit_preview_dir
 from vessel.reports.long_run import build_long_run, long_run_dir
 from vessel.reports.race_recap import build_race_recap, race_recap_dir
 from vessel.schedule import (
@@ -26,6 +33,7 @@ from vessel.schedule import (
 from vessel.sources.calendar_source import ICalCalendarSource
 from vessel.sources.fastf1_schedule import FastF1ScheduleSource
 from vessel.sources.fastf1_session import FastF1SessionSource
+from vessel.sources.jolpica import JolpicaSource
 from vessel.sources.ports import ScheduleSource, SourceUnavailableError
 
 FASTF1_AUTH_HINT = (
@@ -83,7 +91,11 @@ def build_schedule(settings: Settings) -> ScheduleSource:
         if url
         else None
     )
-    return ReconciledSchedule(FastF1ScheduleSource(settings.fastf1_cache_dir), calendar)
+    return ReconciledSchedule(
+        FastF1ScheduleSource(settings.fastf1_cache_dir),
+        calendar,
+        EventStatusFile(settings.event_status_path),
+    )
 
 
 def build_session_store(settings: Settings) -> CuratedSessionStore:
@@ -91,6 +103,10 @@ def build_session_store(settings: Settings) -> CuratedSessionStore:
         FileCache(settings.curated_dir),
         FastF1SessionSource(settings.fastf1_cache_dir),
     )
+
+
+def build_history_store(settings: Settings) -> CuratedHistoryStore:
+    return CuratedHistoryStore(FileCache(settings.curated_dir), JolpicaSource())
 
 
 def _find_event(events: tuple[Event, ...], round_: int) -> Event | None:
@@ -116,6 +132,21 @@ def agenda(
         typer.echo(event.model_dump_json(indent=2))
         return
     typer.echo(render_agenda(event, settings.tz))
+
+
+@app.command()
+def status(
+    season: Annotated[int | None, typer.Option(help="Season year.")] = None,
+) -> None:
+    settings = get_settings()
+    year = season or utc_now().astimezone(settings.tz).year
+    events = build_schedule(settings).events(year)
+    flagged = [event for event in events if event.status is not EventStatus.CONFIRMED]
+    if not flagged:
+        typer.echo(f"Todos os GPs de {year} estão confirmados.")
+        return
+    for event in flagged:
+        typer.echo(f"rodada {event.round} · {event.name} · {status_line(event)}")
 
 
 @app.command()
@@ -226,3 +257,77 @@ def _echo_draft(event: Event, directory: Path, draft: Draft) -> None:
     typer.echo(f"draft: {directory / 'draft.json'}")
     for fact in draft.facts:
         typer.echo(f"- {fact.key}: {fact.display} — {fact.context}")
+
+
+@app.command()
+def grid(
+    season: Annotated[int | None, typer.Option(help="Season year.")] = None,
+    round_: Annotated[
+        int | None, typer.Option("--round", help="Round number; next GP if omitted.")
+    ] = None,
+) -> None:
+    settings = get_settings()
+    settings.ensure_dirs()
+    now = utc_now()
+    events = build_schedule(settings).events(season or now.astimezone(settings.tz).year)
+    event = next_event(events, now) if round_ is None else _find_event(events, round_)
+    if event is None:
+        typer.echo("Nenhum GP encontrado.", err=True)
+        raise typer.Exit(code=1)
+    circuit = load_circuits(settings.circuits_path).circuit_for(
+        event, settings.circuits_path
+    )
+    history_store = build_history_store(settings)
+    history = history_store.circuit(circuit, event.season, HISTORY_EDITIONS)
+    season_tables = history_store.season(events, now)
+    directory = circuit_preview_dir(settings.out_dir, event)
+    preview = build_circuit_preview(
+        event,
+        events,
+        history=history,
+        season=season_tables,
+        team_colors=_team_colors(settings, events, now),
+        directory=directory,
+        handle=settings.handle,
+        now=now,
+    )
+    _echo_championship(preview.math)
+    _echo_draft(event, directory, preview.draft)
+
+
+def _team_colors(
+    settings: Settings, events: tuple[Event, ...], now: datetime
+) -> dict[str, str]:
+    last = last_finished_race(events, now)
+    if last is None:
+        return {}
+    try:
+        tables = build_session_store(settings).race(last)
+    except (SourceUnavailableError, MissingSessionError):
+        return {}
+    return {
+        str(driver): str(color)
+        for driver, color in zip(
+            tables.results["driver"], tables.results["team_color"], strict=True
+        )
+        if pd.notna(color)
+    }
+
+
+def _echo_championship(math: ChampionshipMath | None) -> None:
+    if math is None:
+        return
+    typer.echo(
+        f"Campeonato: {math.leader} {math.leader_points:.0f} x "
+        f"{math.runner_up} {math.runner_up_points:.0f} "
+        f"(diferença {math.gap:.0f})"
+    )
+    at_risk = f"; em risco: {', '.join(map(str, math.at_risk))}" if math.at_risk else ""
+    typer.echo(
+        f"Em disputa: {math.available} pontos nas rodadas "
+        f"{', '.join(map(str, math.rounds))}{at_risk}"
+    )
+    typer.echo(
+        f"Neste GP: até {math.at_stake_here}; depois dele: {math.available_after}. "
+        f"Título decidido aqui? {math.verdict}"
+    )

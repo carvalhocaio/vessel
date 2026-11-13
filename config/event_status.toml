@@ -1,0 +1,13 @@
+# Status dos GPs acompanhado pelas notícias.
+# Chave: [temporada.rodada]. status: confirmed | at_risk | postponed | cancelled.
+# Campos: note (pt-BR, curta), updated_on (AAAA-MM-DD), source (link, opcional).
+
+[2026.22]
+status = "at_risk"
+note = "conflitos na região"
+updated_on = 2026-11-13
+
+[2026.23]
+status = "at_risk"
+note = "conflitos na região"
+updated_on = 2026-11-13

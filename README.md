@@ -34,6 +34,27 @@ uv run vessel agenda --round 22      # a specific round
 uv run vessel agenda --json          # for the curator agent
 ```
 
+## GP status
+
+FastF1 and the official calendar only change once F1 publishes. When the news says a GP is at risk, postponed or cancelled, record it by hand in `config/event_status.toml` (versioned, one table per `[season.round]`):
+
+```toml
+[2026.22]
+status = "at_risk"          # confirmed | at_risk | postponed | cancelled
+note = "conflitos na região"
+updated_on = 2026-11-13
+# source = "https://..."    # link to the news, optional
+```
+
+Flow: saw the news → edit `config/event_status.toml` → check it:
+
+```fish
+uv run vessel status                 # GPs of the season that are not confirmed
+uv run vessel agenda --round 22      # shows a ⚠ line with the note
+```
+
+Cancelled GPs are skipped by `agenda`, `race` and `long-run`. A typo in the file fails with the file name and the offending field.
+
 ## F1 sign-in
 
 Since 2026, FastF1 needs an F1 account to download live timing (laps, stints, positions). Sign in once from a regular terminal; the token is stored by FastF1, outside the repo:
@@ -44,6 +65,19 @@ uv run python -m fastf1 auth f1tv --status
 ```
 
 Curated tables land in `data/curated/<season>/<slug>/<session>/` and are not reloaded once the session is in parc fermé.
+
+## Grid em Números
+
+Thursday thread before the GP: circuit history (last 10 editions actually raced at that circuit), recent form (last 5 races) and the championship math, from Jolpica.
+
+```fish
+uv run vessel grid --season 2026 --round 21   # Las Vegas
+uv run vessel grid                            # next GP
+```
+
+History follows the circuit, not the GP name: `config/circuits.toml` maps each FastF1 location to a Jolpica `circuitId` (the 2026 Bahrain GP at Kuala Lumpur uses Sepang's history). A new venue needs one line there; a circuit with no past editions yields a "first race" fact. Points still at stake skip cancelled GPs and flag at-risk ones (see GP status). Past seasons are cached for good; the current season refreshes 24 h after each race.
+
+Output: `data/out/<season>/<slug>/circuit_preview/`.
 
 ## Volta Rápida
 

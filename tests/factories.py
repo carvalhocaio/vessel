@@ -3,7 +3,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from vessel.curation import RaceTables, SessionTables
+from vessel.curation import (
+    HISTORY_DTYPES,
+    RaceTables,
+    SeasonTables,
+    SessionTables,
+    conform,
+)
 from vessel.domain import Event, EventFormat, Session, SessionKind
 from vessel.sources.fastf1_schedule import events_from_schedule
 
@@ -87,6 +93,47 @@ class FakeSessionSource:
     def session(self, event: Event, kind: SessionKind) -> SessionTables:
         self._call()
         return self.sessions[kind]
+
+    def _call(self) -> None:
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+
+
+def load_history(circuit: str) -> pd.DataFrame:
+    return conform(
+        pd.read_parquet(FIXTURES / f"history_{circuit}.parquet"), HISTORY_DTYPES
+    )
+
+
+def load_season_2026() -> SeasonTables:
+    return SeasonTables(
+        results=pd.read_parquet(FIXTURES / "season_2026_results.parquet"),
+        standings=pd.read_parquet(FIXTURES / "season_2026_standings.parquet"),
+    ).conformed()
+
+
+class FakeHistorySource:
+    def __init__(
+        self,
+        circuits: dict[str, pd.DataFrame],
+        season: SeasonTables,
+        error: Exception | None = None,
+    ) -> None:
+        self._circuits = circuits
+        self._season = season
+        self.error = error
+        self.calls = 0
+
+    def circuit_results(
+        self, circuit_id: str, before_season: int, editions: int
+    ) -> pd.DataFrame:
+        self._call()
+        return self._circuits[circuit_id]
+
+    def season(self, season: int) -> SeasonTables:
+        self._call()
+        return self._season
 
     def _call(self) -> None:
         self.calls += 1
