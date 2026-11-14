@@ -13,8 +13,9 @@ from pydantic import (
 
 from vessel.domain.event import EventRef
 from vessel.domain.provenance import Provenance
+from vessel.domain.regulation import RegulationScope
 
-SCHEMA_VERSION: Literal[3] = 3
+SCHEMA_VERSION: Literal[4] = 4
 
 
 class Source(StrEnum):
@@ -70,13 +71,23 @@ class ChartRef(BaseModel):
 class Draft(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[3] = SCHEMA_VERSION
+    schema_version: Literal[4] = SCHEMA_VERSION
     segment: Segment
-    event: EventRef
+    event: EventRef | None = None
+    regulation: RegulationScope | None = None
     facts: tuple[Fact, ...] = Field(min_length=1)
     caveats: tuple[str, ...] = ()
     charts: tuple[ChartRef, ...] = ()
     generated_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def _subject_matches_segment(self) -> Self:
+        if self.segment is Segment.REGULATIONS:
+            if self.regulation is None or self.event is not None:
+                raise ValueError("a regulations draft has a regulation scope, no event")
+        elif self.event is None or self.regulation is not None:
+            raise ValueError("a GP draft has an event and no regulation scope")
+        return self
 
     @model_validator(mode="after")
     def _fact_keys_are_unique(self) -> Self:

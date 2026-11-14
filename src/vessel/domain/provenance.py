@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from vessel.domain.event import SessionKind
+from vessel.domain.regulation import Section
 
 ParamValue = int | float | str | list[int]
 CALCULATION_KEY = r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$"
@@ -32,8 +33,15 @@ class SeasonTableRef(_Frozen):
     season: int
 
 
+class RegulationTableRef(_Frozen):
+    kind: Literal["regulation"] = "regulation"
+    season: int
+    section: Section
+    issue: int = Field(ge=1)
+
+
 TableRef = Annotated[
-    SessionTableRef | CircuitHistoryRef | SeasonTableRef,
+    SessionTableRef | CircuitHistoryRef | SeasonTableRef | RegulationTableRef,
     Field(discriminator="kind"),
 ]
 

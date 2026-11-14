@@ -3,10 +3,12 @@ from typing import Protocol
 
 import pandas as pd
 
-from vessel.analytics.registry import CalcInputs
+from vessel.analytics.registry import CalcInputs, RegulationKey
 from vessel.cache import FileCache
 from vessel.curation.history import circuit_history_key, season_keys
+from vessel.curation.regulations import articles_key
 from vessel.curation.schema import (
+    ARTICLE_DTYPES,
     DRIVER_DTYPES,
     HISTORY_DTYPES,
     LAP_DTYPES,
@@ -19,6 +21,7 @@ from vessel.curation.schema import (
 from vessel.curation.store import Schemas, decode_frames, session_key
 from vessel.domain import (
     CircuitHistoryRef,
+    RegulationTableRef,
     SeasonTableRef,
     SessionKind,
     SessionTableRef,
@@ -43,6 +46,7 @@ class CuratedTables:
         session: SessionTables | None = None
         history: pd.DataFrame | None = None
         season: SeasonTables | None = None
+        regulations: dict[RegulationKey, pd.DataFrame] = {}
         for ref in refs:
             match ref:
                 case SessionTableRef(session_kind=SessionKind.RACE):
@@ -63,11 +67,18 @@ class CuratedTables:
                     season = SeasonTables(
                         results=frames["results"], standings=frames["standings"]
                     )
+                case RegulationTableRef():
+                    key = articles_key(ref.season, ref.section, ref.issue)
+                    articles = self._read(ref, {"articles": key}, _REGULATION)
+                    regulations[(ref.season, ref.section.value, ref.issue)] = articles[
+                        "articles"
+                    ]
         return CalcInputs(
             race_tables=race,
             session_tables=session,
             history_table=history,
             season_tables=season,
+            regulation_tables=regulations,
         )
 
     def _read(
@@ -98,6 +109,8 @@ def producing_command(ref: TableRef) -> str:
             return f"uv run vessel grid --season {ref.before_season}"
         case SeasonTableRef():
             return f"uv run vessel grid --season {ref.season}"
+        case RegulationTableRef():
+            return "uv run vessel regs sync --all"
 
 
 def _session_keys(ref: SessionTableRef, second: str) -> dict[str, str]:
@@ -111,3 +124,4 @@ _RACE: Schemas = {"laps": LAP_DTYPES, "results": RESULT_DTYPES}
 _SESSION: Schemas = {"laps": LAP_DTYPES, "drivers": DRIVER_DTYPES}
 _HISTORY: Schemas = {"results": HISTORY_DTYPES}
 _SEASON: Schemas = {"results": HISTORY_DTYPES, "standings": STANDING_DTYPES}
+_REGULATION: Schemas = {"articles": ARTICLE_DTYPES}

@@ -7,6 +7,7 @@ from vessel.curation.schema import RaceTables, SeasonTables, SessionTables
 from vessel.domain import ChartSpec, Fact, ParamValue, Provenance, Source, TableRef
 
 Params = Mapping[str, ParamValue]
+RegulationKey = tuple[int, str, int]
 
 
 class CalculationError(ValueError):
@@ -32,7 +33,15 @@ class CalcInputs:
     session_tables: SessionTables | None = None
     history_table: pd.DataFrame | None = None
     season_tables: SeasonTables | None = None
-    extras: Mapping[str, object] = field(default_factory=dict)
+    regulation_tables: Mapping[RegulationKey, pd.DataFrame] = field(
+        default_factory=dict
+    )
+
+    def regulation(self, season: int, section: str, issue: int) -> pd.DataFrame:
+        key = (season, section, issue)
+        if key not in self.regulation_tables:
+            raise MissingInputError(f"missing regulation articles {key}")
+        return self.regulation_tables[key]
 
     @property
     def race(self) -> RaceTables:

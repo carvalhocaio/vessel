@@ -10,6 +10,8 @@ from vessel.domain import (
     Event,
     Fact,
     Provenance,
+    RegulationScope,
+    Section,
     Segment,
     SessionKind,
     SessionTableRef,
@@ -71,7 +73,7 @@ def test_round_trips_through_json(sao_paulo: Event) -> None:
 
 
 def test_schema_version_is_pinned(sao_paulo: Event) -> None:
-    assert _draft(sao_paulo).schema_version == 3
+    assert _draft(sao_paulo).schema_version == 4
 
 
 def test_sources_merge_facts_and_charts_in_stable_order(sao_paulo: Event) -> None:
@@ -167,3 +169,41 @@ def test_provenance_round_trips_table_refs() -> None:
 
     assert restored == PROVENANCE
     assert isinstance(restored.inputs[0], SessionTableRef)
+
+
+def test_regulations_draft_needs_scope_and_no_event(sao_paulo: Event) -> None:
+    scope = RegulationScope(
+        season=2026, section=Section.TECHNICAL, from_issue=20, to_issue=21
+    )
+
+    draft = Draft(
+        segment=Segment.REGULATIONS,
+        regulation=scope,
+        facts=(_fact(),),
+        generated_at=GENERATED_AT,
+    )
+
+    assert draft.event is None
+    with pytest.raises(ValidationError, match="regulation scope"):
+        Draft(segment=Segment.REGULATIONS, facts=(_fact(),), generated_at=GENERATED_AT)
+    with pytest.raises(ValidationError, match="GP draft"):
+        Draft(
+            segment=Segment.LONG_RUN,
+            event=sao_paulo.ref,
+            regulation=scope,
+            facts=(_fact(),),
+            generated_at=GENERATED_AT,
+        )
+
+
+def test_regulation_scope_issues_must_increase() -> None:
+    with pytest.raises(ValidationError):
+        RegulationScope(
+            season=2026, section=Section.TECHNICAL, from_issue=21, to_issue=20
+        )
+
+
+def test_sections_map_to_official_letters() -> None:
+    assert Section.TECHNICAL.letter == "C"
+    assert Section.from_letter("E") is Section.FINANCIAL_PU
+    assert Section.FINANCIAL_TEAMS.official_name == "Financial - F1 Teams"

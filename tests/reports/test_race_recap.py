@@ -38,7 +38,7 @@ def test_race_recap_writes_verified_draft_and_charts(
     saved = Draft.model_validate(
         json.loads((directory / "draft.json").read_text(encoding="utf-8"))
     )
-    assert saved.schema_version == 3
+    assert saved.schema_version == 4
     assert saved.segment is Segment.RACE_RECAP
     assert saved.event == sao_paulo.ref
     assert len(saved.facts) == 6

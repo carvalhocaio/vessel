@@ -1,4 +1,6 @@
 from vessel.curation.schema import (
+    ARTICLE_DTYPES,
+    DOCUMENT_DTYPES,
     DRIVER_DTYPES,
     HISTORY_DTYPES,
     LAP_DTYPES,
@@ -12,6 +14,8 @@ from vessel.curation.schema import (
 )
 
 __all__ = [
+    "ARTICLE_DTYPES",
+    "DOCUMENT_DTYPES",
     "DRIVER_DTYPES",
     "HISTORY_DTYPES",
     "LAP_DTYPES",

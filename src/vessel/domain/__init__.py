@@ -43,14 +43,22 @@ from vessel.domain.provenance import (
     CircuitHistoryRef,
     ParamValue,
     Provenance,
+    RegulationTableRef,
     SeasonTableRef,
     SessionTableRef,
     TableRef,
+)
+from vessel.domain.regulation import (
+    Article,
+    RegulationDocument,
+    RegulationScope,
+    Section,
 )
 
 __all__ = [
     "CHART_SPEC",
     "SCHEMA_VERSION",
+    "Article",
     "Axis",
     "AxisFormat",
     "CalendarEntry",
@@ -78,7 +86,11 @@ __all__ = [
     "RankedDotsSpec",
     "RankedPoint",
     "RankedSeries",
+    "RegulationDocument",
+    "RegulationScope",
+    "RegulationTableRef",
     "SeasonTableRef",
+    "Section",
     "Segment",
     "Session",
     "SessionKind",

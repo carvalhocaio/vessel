@@ -13,6 +13,7 @@ dependencies = [
     "pyarrow>=18.0",
     "pydantic>=2.10",
     "pydantic-settings>=2.7",
+    "pymupdf>=2.1",
     "typer>=0.15",
 ]
 

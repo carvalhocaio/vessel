@@ -19,6 +19,7 @@ from vessel.cache.store import utc_now
 from vessel.circuits import load_circuits
 from vessel.config import Settings, get_settings
 from vessel.curation.history import CuratedHistoryStore
+from vessel.curation.regulations import CuratedRegulationStore, MissingRegulationError
 from vessel.curation.schema import RaceTables
 from vessel.curation.store import CuratedSessionStore, MissingSessionError
 from vessel.curation.tables import CuratedTables, MissingCuratedTableError
@@ -28,6 +29,8 @@ from vessel.domain import (
     Draft,
     Event,
     EventStatus,
+    RegulationScope,
+    Section,
     SessionKind,
     SessionTableRef,
 )
@@ -41,6 +44,11 @@ from vessel.reports.circuit_preview import (
 from vessel.reports.drafts import DraftVerificationError, Verifier
 from vessel.reports.long_run import build_long_run, long_run_dir
 from vessel.reports.race_recap import build_race_recap, race_recap_dir, race_ref
+from vessel.reports.regulations import (
+    build_regulations,
+    export_chunks,
+    regulations_dir,
+)
 from vessel.schedule import (
     ReconciledSchedule,
     last_finished,
@@ -50,6 +58,7 @@ from vessel.schedule import (
 from vessel.sources.calendar_source import ICalCalendarSource
 from vessel.sources.fastf1_schedule import FastF1ScheduleSource
 from vessel.sources.fastf1_session import FastF1SessionSource
+from vessel.sources.fia_source import FiaRegulationSource
 from vessel.sources.jolpica import JolpicaSource
 from vessel.sources.ports import ScheduleSource, SourceUnavailableError
 from vessel.verify import verifier, verify_file
@@ -417,3 +426,181 @@ def _echo_championship(math: ChampionshipMath | None) -> None:
         f"Neste GP: até {math.at_stake_here}; depois dele: {math.available_after}. "
         f"Título decidido aqui? {math.verdict}"
     )
+
+
+regs = typer.Typer(no_args_is_help=True, help="FIA F1 regulations as data.")
+app.add_typer(regs, name="regs")
+
+REGS_TABLE = "{:<6} {:<2} {:<30} {:>4} {:<10} {:>8}"
+
+
+def build_regulation_store(settings: Settings) -> CuratedRegulationStore:
+    return CuratedRegulationStore(
+        FileCache(settings.curated_dir),
+        FiaRegulationSource(FileCache(settings.cache_dir)),
+    )
+
+
+@regs.command("sync")
+def regs_sync(
+    every_issue: Annotated[
+        bool, typer.Option("--all", help="Download every issue, not only the last two.")
+    ] = False,
+    reparse: Annotated[
+        bool, typer.Option(help="Parse cached PDFs again (after a parser change).")
+    ] = False,
+) -> None:
+    store = build_regulation_store(get_settings())
+    results = store.sync(every_issue=every_issue, reparse=reparse)
+    for result in results:
+        origin = "baixado" if result.downloaded else "cache"
+        typer.echo(
+            f"{result.document.label:<16} {result.articles:>5} artigos · {origin}"
+        )
+    typer.echo(f"{len(results)} documentos sincronizados.")
+
+
+@regs.command("list")
+def regs_list(
+    season: Annotated[int | None, typer.Option(help="Season year.")] = None,
+) -> None:
+    store = build_regulation_store(get_settings())
+    documents = [d for d in store.documents() if season in (None, d.season)]
+    if not documents:
+        typer.echo("Nenhum regulamento curado; rode: uv run vessel regs sync", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(REGS_TABLE.format("temp.", "", "seção", "iss", "publicado", "artigos"))
+    for document in sorted(
+        documents, key=lambda d: (d.season, d.section.letter, d.issue)
+    ):
+        try:
+            count = str(
+                len(store.articles(document.season, document.section, document.issue))
+            )
+        except MissingRegulationError:
+            count = "—"
+        typer.echo(
+            REGS_TABLE.format(
+                document.season,
+                document.section.letter,
+                document.section.official_name[:30],
+                document.issue,
+                document.published_on.isoformat(),
+                count,
+            )
+        )
+
+
+@regs.command("diff")
+def regs_diff(
+    season: Annotated[int, typer.Option(help="Season year.")],
+    section: Annotated[Section, typer.Option(help="Regulation section.")],
+    from_issue: Annotated[
+        int | None, typer.Option("--from", help="Older issue.")
+    ] = None,
+    to_issue: Annotated[int | None, typer.Option("--to", help="Newer issue.")] = None,
+) -> None:
+    settings = get_settings()
+    store = build_regulation_store(settings)
+    curated = sorted(
+        d.issue
+        for d in store.documents()
+        if d.season == season and d.section is section
+    )
+    to_issue = to_issue or (curated[-1] if curated else None)
+    if from_issue is None and to_issue is not None:
+        older = [issue for issue in curated if issue < to_issue]
+        from_issue = older[-1] if older else None
+    if from_issue is None or to_issue is None:
+        typer.echo(
+            "São necessárias duas issues curadas; rode: uv run vessel regs sync",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    scope = RegulationScope(
+        season=season, section=section, from_issue=from_issue, to_issue=to_issue
+    )
+    try:
+        old = store.articles(season, section, from_issue)
+        new = store.articles(season, section, to_issue)
+    except MissingRegulationError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    directory = regulations_dir(settings.out_dir, scope)
+    with _rejections():
+        draft = build_regulations(
+            scope, old, new, directory, now=utc_now(), verify=build_verifier(settings)
+        )
+    typer.echo(
+        f"{season} {section.official_name} · Iss {from_issue:02d} → Iss {to_issue:02d}"
+    )
+    typer.echo(f"draft: {directory / 'draft.json'}")
+    for fact in draft.facts:
+        typer.echo(f"- {fact.key}: {fact.display} — {fact.context}")
+
+
+@regs.command("show")
+def regs_show(
+    number: Annotated[str, typer.Argument(help="Article number, e.g. C3.10.")],
+    season: Annotated[int | None, typer.Option(help="Season year.")] = None,
+    issue: Annotated[int | None, typer.Option(help="Issue number.")] = None,
+) -> None:
+    store = build_regulation_store(get_settings())
+    section = Section.from_letter(number[:1].upper())
+    documents = [
+        d
+        for d in store.documents()
+        if d.section is section
+        and season in (None, d.season)
+        and issue in (None, d.issue)
+    ]
+    if not documents:
+        typer.echo("Regulamento não curado; rode: uv run vessel regs sync", err=True)
+        raise typer.Exit(code=1)
+    document = max(documents, key=lambda d: (d.season, d.issue))
+    articles = store.articles(document.season, section, document.issue)
+    wanted = number.upper()
+    selected = articles[
+        (articles["number"] == wanted) | articles["number"].str.startswith(wanted + ".")
+    ]
+    if selected.empty:
+        typer.echo(f"Artigo {wanted} não encontrado em {document.label}.", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"{document.label} · {document.url}")
+    for row in selected.sort_values("position").to_dict("records"):
+        title = row["title"] if pd.notna(row["title"]) else ""
+        typer.echo(
+            f"\n{row['number']} {title} (p. {row['page_start']} a {row['page_end']})"
+        )
+        typer.echo(str(row["text"]))
+
+
+@regs.command("export-chunks")
+def regs_export_chunks(
+    season: Annotated[int | None, typer.Option(help="Season year.")] = None,
+    section: Annotated[Section | None, typer.Option(help="Regulation section.")] = None,
+) -> None:
+    settings = get_settings()
+    store = build_regulation_store(settings)
+    latest: dict[tuple[int, Section], int] = {}
+    for document in store.documents():
+        if season in (None, document.season) and section in (None, document.section):
+            key = (document.season, document.section)
+            latest[key] = max(latest.get(key, 0), document.issue)
+    if not latest:
+        typer.echo("Nenhum regulamento curado; rode: uv run vessel regs sync", err=True)
+        raise typer.Exit(code=1)
+    for (year, part), issue in sorted(
+        latest.items(), key=lambda item: (item[0][0], item[0][1].letter)
+    ):
+        path = (
+            settings.out_dir
+            / "regulations"
+            / "chunks"
+            / f"{year}_{part.value}_iss{issue:02d}.jsonl"
+        )
+        try:
+            count = export_chunks(store.articles(year, part, issue), path)
+        except MissingRegulationError:
+            continue
+        typer.echo(f"{path} · {count} chunks")

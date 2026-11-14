@@ -6,13 +6,21 @@ import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
-from tests.factories import FIXTURES, FakeHistorySource, FakeSessionSource
+from tests.factories import (
+    FIXTURES,
+    FakeHistorySource,
+    FakeRegulationSource,
+    FakeSessionSource,
+    parsed_fixture,
+    regulation_document,
+)
 from vessel import __version__, cli
 from vessel.cache import FileCache
 from vessel.cli import app
 from vessel.config import Settings
 from vessel.curation import RaceTables, SeasonTables, SessionTables
 from vessel.curation.history import CuratedHistoryStore
+from vessel.curation.regulations import CuratedRegulationStore
 from vessel.curation.store import CuratedSessionStore
 from vessel.domain import Event, SessionKind
 from vessel.event_status import EventStatusFile
@@ -376,3 +384,96 @@ def test_verify_explains_missing_curated_tables(
 
     assert result.exit_code == 1
     assert "uv run vessel race --season 2026 --round 20" in result.output
+
+
+@pytest.fixture
+def regs_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FakeRegulationSource:
+    documents = tuple(
+        regulation_document(issue).model_copy(update={"sha256": None})
+        for issue in (20, 21)
+    )
+    source = FakeRegulationSource(documents)
+    settings = Settings(data_dir=tmp_path)
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        cli,
+        "build_regulation_store",
+        lambda s: CuratedRegulationStore(
+            FileCache(s.curated_dir), source, parse=parsed_fixture
+        ),
+    )
+    monkeypatch.setattr(cli, "utc_now", lambda: datetime(2026, 11, 13, 17, tzinfo=UTC))
+    return source
+
+
+def test_regs_sync_and_list(regs_env: FakeRegulationSource) -> None:
+    synced = runner.invoke(app, ["regs", "sync"])
+    listed = runner.invoke(app, ["regs", "list", "--season", "2026"])
+
+    assert synced.exit_code == 0, synced.output
+    assert "2026 C Iss 21" in synced.stdout
+    assert "2 documentos sincronizados." in synced.stdout
+    assert listed.exit_code == 0, listed.output
+    assert "Technical" in listed.stdout
+
+
+def test_regs_diff_writes_verified_draft(
+    regs_env: FakeRegulationSource, tmp_path: Path
+) -> None:
+    runner.invoke(app, ["regs", "sync"])
+
+    result = runner.invoke(
+        app, ["regs", "diff", "--season", "2026", "--section", "technical"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Iss 20 → Iss 21" in result.stdout
+    draft = tmp_path / "out/2026/regulations/technical/20-21/draft.json"
+    verify = runner.invoke(app, ["verify", str(draft)])
+    assert verify.exit_code == 0, verify.output
+    assert "nenhuma divergência" in verify.stdout
+
+
+def test_regs_verify_names_sync_when_parquet_is_missing(
+    regs_env: FakeRegulationSource, tmp_path: Path
+) -> None:
+    runner.invoke(app, ["regs", "sync"])
+    runner.invoke(app, ["regs", "diff", "--season", "2026", "--section", "technical"])
+    (tmp_path / "curated/regulations/2026/technical/20/articles.parquet").unlink()
+
+    result = runner.invoke(
+        app,
+        ["verify", str(tmp_path / "out/2026/regulations/technical/20-21/draft.json")],
+    )
+
+    assert result.exit_code == 1
+    assert "uv run vessel regs sync --all" in result.output
+
+
+def test_regs_show_prints_article_and_children(regs_env: FakeRegulationSource) -> None:
+    runner.invoke(app, ["regs", "sync"])
+
+    result = runner.invoke(app, ["regs", "show", "C1"])
+
+    assert result.exit_code == 0, result.output
+    assert "2026 C Iss 21" in result.stdout
+    assert "C1.1 Amendments to these Technical Regulations" in result.stdout
+    assert "C5.2.12" not in result.stdout
+
+
+def test_regs_export_chunks(regs_env: FakeRegulationSource, tmp_path: Path) -> None:
+    runner.invoke(app, ["regs", "sync"])
+
+    result = runner.invoke(app, ["regs", "export-chunks", "--season", "2026"])
+
+    assert result.exit_code == 0, result.output
+    path = tmp_path / "out/regulations/chunks/2026_technical_iss21.jsonl"
+    assert len(path.read_text("utf-8").splitlines()) == 9
+
+
+def test_regs_diff_needs_two_issues(regs_env: FakeRegulationSource) -> None:
+    result = runner.invoke(
+        app, ["regs", "diff", "--season", "2027", "--section", "technical"]
+    )
+
+    assert result.exit_code == 1

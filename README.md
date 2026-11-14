@@ -111,6 +111,29 @@ Each segment produces a `draft.json` that the curator agent turns into a post. F
 uv run vessel schema --output draft.schema.json
 ```
 
+## Regulations (The Judge and RAG)
+
+The FIA F1 regulations (sections A to F, from 2026 on) become data: each issue is split into articles, consecutive issues are compared, and every article can be exported as a chunk for the agent's RAG.
+
+```fish
+uv run vessel regs sync                 # index + last two issues of each season/section
+uv run vessel regs sync --all           # every issue listed on fia.com
+uv run vessel regs sync --reparse       # parse cached PDFs again after a parser change
+uv run vessel regs list --season 2027
+uv run vessel regs diff --season 2026 --section technical            # last two issues
+uv run vessel regs diff --season 2027 --section technical --from 3 --to 4
+uv run vessel regs show C5.2.12 --season 2027
+uv run vessel regs export-chunks        # JSONL per season/section, latest issue
+```
+
+- Source: the category index at fia.com (cached 12 h) and the PDFs (kept forever: a published issue never changes; a re-upload with the same sha256 reuses its articles). Requests send `User-Agent: vessel (+https://github.com/carvalhocaio/vessel)`.
+- Parser (pymupdf): repeated headers and footers removed, hyphenation joined, ligatures and hyphen variants normalised, articles split by the section's numbering (`C3.10.2`), appendices as one item each (`CAPP1`). The FIA's pink text (changes since the previous issue) is kept as a hint; red, orange and green notes (governance, references, comments) go to `notes`, not to the article text.
+- Diff: issue N against N-1, article by article (added, removed, changed). Whitespace, line breaks, broken ligatures and table symbols don't count; changed articles keep a short before/after excerpt and the similarity.
+- Draft: `data/out/<season>/regulations/<section>/<from>-<to>/draft.json` (Segment `regulations`, source FIA), with provenance on the curated `articles.parquet`, so `vessel verify` recomputes it offline. Each fact cites article number, issue and the PDF link.
+- Chunks: `data/out/regulations/chunks/<season>_<section>_iss<NN>.jsonl`, one record per article with text and metadata (season, section, issue, number, title, pages, URL). Embeddings come later.
+
+Rights: the site and posts quote short excerpts and link the official PDF on fia.com. PDFs live only in `data/` and are never committed. pymupdf is AGPL-3.0; vessel uses it locally in the pipeline and does not distribute it.
+
 ## Provenance and verification
 
 No number is born in the curator agent. Every fact and every chart in a `draft.json` carries a `provenance`: the calculation key (`race.biggest_gain`, `long_run.pace_gap_top_teams`, `chart.positions`…), the curated tables it read (season, round, session kind, circuit history window, season results) and the parameters used (minimum laps, editions window, the remaining rounds and their status at generation time). Calculations live in a registry (`vessel/analytics/registry.py`); a duplicated or unknown key is an error.

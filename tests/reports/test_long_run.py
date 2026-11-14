@@ -70,6 +70,7 @@ def test_sprint_long_run_report(
         verify=verify_with(sprint_2026_17),
     )
 
+    assert draft.event is not None
     assert draft.event.round == 17
     assert "top_teams_pace_gap" in {fact.key for fact in draft.facts}
 

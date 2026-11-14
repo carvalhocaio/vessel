@@ -3,7 +3,12 @@ from typing import Protocol
 import pandas as pd
 
 from vessel.curation.schema import RaceTables, SeasonTables, SessionTables
-from vessel.domain import CalendarEntry, Event, SessionKind
+from vessel.domain import (
+    CalendarEntry,
+    Event,
+    RegulationDocument,
+    SessionKind,
+)
 
 
 class SourceUnavailableError(RuntimeError):
@@ -30,3 +35,11 @@ class HistorySource(Protocol):
     ) -> pd.DataFrame: ...
 
     def season(self, season: int) -> SeasonTables: ...
+
+
+class RegulationSource(Protocol):
+    def documents(self) -> tuple[RegulationDocument, ...]: ...
+
+    def pdf(self, document: RegulationDocument) -> bytes: ...
+
+    def has_pdf(self, document: RegulationDocument) -> bool: ...

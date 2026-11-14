@@ -65,6 +65,34 @@ STANDING_DTYPES: dict[str, str] = {
 }
 
 
+DOCUMENT_DTYPES: dict[str, str] = {
+    "season": "Int16",
+    "section": "string",
+    "issue": "Int16",
+    "published_on": "string",
+    "url": "string",
+    "sha256": "string",
+}
+
+ARTICLE_DTYPES: dict[str, str] = {
+    "season": "Int16",
+    "section": "string",
+    "issue": "Int16",
+    "published_on": "string",
+    "document_url": "string",
+    "sha256": "string",
+    "position": "Int32",
+    "number": "string",
+    "parent": "string",
+    "title": "string",
+    "text": "string",
+    "notes": "string",
+    "page_start": "Int16",
+    "page_end": "Int16",
+    "marked_changed": "boolean",
+}
+
+
 class SchemaError(ValueError):
     pass
 

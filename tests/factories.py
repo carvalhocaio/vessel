@@ -1,4 +1,5 @@
-from datetime import UTC, datetime, timedelta
+import json
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -11,16 +12,20 @@ from vessel.curation import (
     SessionTables,
     conform,
 )
+from vessel.curation.regulations import articles_frame
 from vessel.domain import (
     Event,
     EventFormat,
     Fact,
     Provenance,
+    RegulationDocument,
+    Section,
     Session,
     SessionKind,
     SessionTableRef,
     TableRef,
 )
+from vessel.regulations.parser import Line, Pages, parse_articles
 from vessel.sources.fastf1_schedule import events_from_schedule
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -174,3 +179,55 @@ class StaticTables:
     def load(self, refs: tuple[TableRef, ...]) -> CalcInputs:
         self.loads += 1
         return self._inputs
+
+
+REGULATION_URL = (
+    "https://www.fia.com/system/files/documents/"
+    "fia_2026_f1_regulations_-_section_c_technical_-_iss_{issue:02d}.pdf"
+)
+
+
+def load_regulation_pages(issue: int) -> Pages:
+    raw = json.loads(
+        (FIXTURES / f"regs_2026_technical_iss{issue}_pages.json").read_text("utf-8")
+    )
+    return [[Line(**line) for line in page] for page in raw]
+
+
+def regulation_document(issue: int, season: int = 2026) -> RegulationDocument:
+    return RegulationDocument(
+        season=season,
+        section=Section.TECHNICAL,
+        issue=issue,
+        published_on=date(2026, 10, issue - 1 if issue > 1 else 1),
+        url=REGULATION_URL.format(issue=issue),
+        sha256=f"{issue:064x}",
+    )
+
+
+def regulation_articles(issue: int) -> pd.DataFrame:
+    articles = parse_articles(load_regulation_pages(issue), Section.TECHNICAL)
+    parsed = pd.DataFrame([article.model_dump() for article in articles])
+    return articles_frame(parsed, regulation_document(issue))
+
+
+def parsed_fixture(pdf: bytes, section: Section) -> pd.DataFrame:
+    issue = int(pdf.decode().rsplit("-", 1)[1])
+    articles = parse_articles(load_regulation_pages(issue), section)
+    return pd.DataFrame([article.model_dump() for article in articles])
+
+
+class FakeRegulationSource:
+    def __init__(self, documents: tuple[RegulationDocument, ...]) -> None:
+        self._documents = documents
+        self.downloads: list[int] = []
+
+    def documents(self) -> tuple[RegulationDocument, ...]:
+        return self._documents
+
+    def pdf(self, document: RegulationDocument) -> bytes:
+        self.downloads.append(document.issue)
+        return f"pdf-{document.issue}".encode()
+
+    def has_pdf(self, document: RegulationDocument) -> bool:
+        return document.issue in self.downloads
